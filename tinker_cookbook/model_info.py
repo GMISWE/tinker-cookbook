@@ -33,6 +33,12 @@ def get_llama_info() -> dict[str, ModelAttributes]:
 def get_qwen_info() -> dict[str, ModelAttributes]:
     org = "Qwen"
     return {
+        # Qwen2.5 models
+        "Qwen2.5-0.5B-Instruct": ModelAttributes(org, "2.5", "0.5B", True),
+        "Qwen2.5-1.5B-Instruct": ModelAttributes(org, "2.5", "1.5B", True),
+        "Qwen2.5-3B-Instruct": ModelAttributes(org, "2.5", "3B", True),
+        "Qwen2.5-7B-Instruct": ModelAttributes(org, "2.5", "7B", True),
+        # Qwen3 models
         "Qwen3-4B-Base": ModelAttributes(org, "3", "4B", False),
         "Qwen3-8B-Base": ModelAttributes(org, "3", "8B", False),
         "Qwen3-14B-Base": ModelAttributes(org, "3", "14B", False),
@@ -97,6 +103,9 @@ def get_recommended_renderer_names(model_name: str) -> list[str]:
                 return ["qwen3_instruct"]
             else:
                 return ["qwen3", "qwen3_disable_thinking"]
+        elif attributes.version_str == "2.5":
+            # Qwen2.5 uses similar chat template to Qwen2
+            return ["role_colon"]  # Generic role-based renderer for Qwen2.5
         else:
             raise ValueError(f"Unknown model: {model_name}")
     elif attributes.organization == "deepseek-ai":
