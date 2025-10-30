@@ -221,16 +221,22 @@ class RoleColonRenderer(Renderer):
         str_response = self.tokenizer.decode(response)
         splitted = str_response.split("\n\nUser:")
         if len(splitted) == 1:
+            # No stop token found - model didn't stop properly
             logger.debug(f"Response is not a valid assistant response: {str_response}")
             return Message(role="assistant", content=str_response.strip()), False
         elif len(splitted) == 2:
+            # Normal case - model stopped at the stop token correctly
             before, _after = splitted
             return Message(role="assistant", content=before.strip()), True
         else:
-            raise ValueError(
-                f"When parsing response, expected to split into 1 or 2 pieces using stop tokens, but got {len(splitted)}. "
-                "You probably are using the wrong stop tokens when sampling"
+            # 3+ pieces: Model hallucinated additional stop tokens (e.g., Qwen2.5)
+            # Take the first piece before the first stop token
+            logger.warning(
+                f"Response contains {len(splitted)} stop tokens (expected 1-2). "
+                f"Model may be hallucinating. Taking first response piece."
             )
+            before = splitted[0]
+            return Message(role="assistant", content=before.strip()), True
 
     @property
     def _bos_tokens(self) -> list[int]:
