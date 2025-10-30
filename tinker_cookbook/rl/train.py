@@ -221,6 +221,7 @@ class Config:
 
     log_path: str = chz.field(munger=lambda _, s: os.path.expanduser(s))
     base_url: str | None = None
+    debug_train_only: bool = False  # RL needs rollout actors for sampling (Slime-specific)
     enable_trace: bool = False
 
     remove_constant_reward_groups: bool = False
@@ -982,7 +983,7 @@ async def main(
 
     service_client = tinker.ServiceClient(base_url=cfg.base_url)
     training_client = await service_client.create_lora_training_client_async(
-        cfg.model_name, rank=cfg.lora_rank
+        cfg.model_name, rank=cfg.lora_rank, debug_train_only=cfg.debug_train_only
     )
 
     load_state_path: str | None = (
