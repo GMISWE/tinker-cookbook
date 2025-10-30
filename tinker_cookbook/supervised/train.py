@@ -55,6 +55,7 @@ class Config:
 
     # Infrastructure parameters
     base_url: str | None = None
+    debug_train_only: bool = True  # SFT doesn't need rollout actors (Slime-specific)
 
     # Checkpointing and evaluation
     evaluator_builders: list[EvaluatorBuilder] = chz.field(default_factory=list)
@@ -148,6 +149,7 @@ async def main(config: Config):
         training_client = await service_client.create_lora_training_client_async(
             base_model=config.model_name,
             rank=config.lora_rank,
+            debug_train_only=config.debug_train_only,
             user_metadata=user_metadata,
         )
 
