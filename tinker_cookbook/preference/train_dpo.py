@@ -242,6 +242,16 @@ def do_update(
 
         all_ref_logprobs = asyncio.run(compute_all_ref_logprobs())
 
+        # DEBUG: Check what we got back
+        print(f"\n{'='*80}")
+        print(f"DEBUG: compute_logprobs_async results:")
+        print(f"  Number of sequences: {len(all_ref_logprobs)}")
+        for i, logprobs in enumerate(all_ref_logprobs):
+            print(f"  Sequence {i}: type={type(logprobs)}, value={logprobs if logprobs is None else f'list of {len(logprobs)} items'}")
+            if logprobs is not None and len(logprobs) > 0:
+                print(f"    First few values: {logprobs[:5]}")
+        print(f"{'='*80}\n")
+
         # Extract the relevant logprobs (skip the first token which is the prompt)
         all_ref_logprob_seqs = [torch.tensor(logprobs[1:]) for logprobs in all_ref_logprobs]
 

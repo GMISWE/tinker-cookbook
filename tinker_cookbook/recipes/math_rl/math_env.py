@@ -332,7 +332,16 @@ class Gsm8kDataset(RLDataset):
     ):
         if split not in ("train", "test"):
             raise ValueError("split must be 'train' or 'test'")
-        self.ds = cast(Dataset, load_dataset("openai/gsm8k", name="main", split=split))
+        
+        # Try loading from local parquet files first, fall back to HuggingFace
+        local_gsm8k_path = "/data/datasets/gsm8k"
+        import os
+        if os.path.exists(os.path.join(local_gsm8k_path, f"{split}.parquet")):
+            self.ds = cast(Dataset, load_dataset("parquet", data_files={split: os.path.join(local_gsm8k_path, f"{split}.parquet")}, split=split))
+        else:
+            # Fall back to downloading from HuggingFace
+            self.ds = cast(Dataset, load_dataset("openai/gsm8k", name="main", split=split))
+        
         if split == "train":
             self.ds = self.ds.shuffle(seed=seed)
         self.batch_size = batch_size

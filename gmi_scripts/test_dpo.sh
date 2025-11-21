@@ -9,7 +9,7 @@
 # - kgateway-training deployment up and running
 # - tinker_gmi and tinker-cookbook installed in slime-training-0 pod
 
-kubectl exec -n slime-gmi slime-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && python -m tinker_cookbook.recipes.preference.dpo.train \
+kubectl exec -n slime-gmi slime-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && export HF_DATASETS_OFFLINE=0 && export HF_HUB_OFFLINE=0 && export HF_DATASETS_CACHE=/data/datasets && export HF_HOME=/data && python -m tinker_cookbook.recipes.preference.dpo.train \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
     base_url=http://kgateway-training.slime-gmi:8000 \
