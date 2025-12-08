@@ -83,7 +83,7 @@ python -u -m tinker_cookbook.recipes.math_rl.train \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
     env=gsm8k \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     group_size=4 \
     groups_per_batch=2 \
     learning_rate=2e-4 \

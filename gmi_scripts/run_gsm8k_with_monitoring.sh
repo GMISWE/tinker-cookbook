@@ -5,8 +5,8 @@
 set -e  # Exit on error
 
 LOG_FILE="/tmp/gsm8k_monitoring_$(date +%Y%m%d_%H%M%S).log"
-POD_NAME="slime-training-0"
-NAMESPACE="slime-gmi"
+POD_NAME="miles-training-0"
+NAMESPACE="miles-gmi-tinker"
 
 echo "================================================================================"
 echo "GSM8K OOM Monitoring Test"
@@ -82,7 +82,7 @@ python -u -m tinker_cookbook.recipes.math_rl.train \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
     env=gsm8k \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     group_size=4 \
     groups_per_batch=2 \
     learning_rate=2e-4 \

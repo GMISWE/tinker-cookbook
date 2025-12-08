@@ -1,4 +1,4 @@
-# Tinker-Cookbook Compatibility with kgateway-training (Slime Backend)
+# Tinker-Cookbook Compatibility with kgateway-training (Miles Backend)
 
 ## Status: ✅ VERIFIED COMPATIBLE
 
@@ -12,7 +12,7 @@ Tinker-cookbook **CAN** run with your kgateway-training setup with **minimal mod
 
 #### 1. Add `debug_train_only` Parameter (✅ COMPLETED)
 
-**Why needed:** Slime-specific parameter controls rollout actor spawning
+**Why needed:** Miles-specific parameter controls rollout actor spawning
 - **SFT**: `debug_train_only=True` (no rollout actors - training only)
 - **RL**: `debug_train_only=False` (spawn rollout actors for sampling)
 
@@ -31,7 +31,7 @@ Tinker-cookbook **CAN** run with your kgateway-training setup with **minimal mod
 
 #### 3. Use Local Model Paths
 
-**Why needed:** Slime expects local model paths, not HuggingFace format
+**Why needed:** Miles expects local model paths, not HuggingFace format
 
 **Example:**
 ```python
@@ -61,7 +61,7 @@ tinker-cookbook/tinker_cookbook/
 
 ### Prerequisites
 
-1. **Install dependencies** in slime-training pod:
+1. **Install dependencies** in miles-training pod:
    ```bash
    pip install chz termcolor
    ```
@@ -73,14 +73,14 @@ tinker-cookbook/tinker_cookbook/
 
 3. **Set environment variables**:
    ```bash
-   export TINKER_API_KEY=slime-dev-key
+   export TINKER_API_KEY=miles-dev-key
    ```
 
 ### Example: Supervised Learning
 
 ```bash
 python /tmp/tinker-cookbook/tinker_cookbook/recipes/sl_basic.py \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     model_name=/data/models/Qwen2.5-0.5B-Instruct_torch_dist \
     batch_size=2 \
     debug_train_only=True
@@ -90,7 +90,7 @@ python /tmp/tinker-cookbook/tinker_cookbook/recipes/sl_basic.py \
 
 ```bash
 python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     model_name=/data/models/Qwen2.5-0.5B-Instruct_torch_dist \
     batch_size=2 \
     debug_train_only=False \
@@ -105,7 +105,7 @@ python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
 | Reinforcement Learning (RL) | ✅ Compatible | Requires `debug_train_only=False` |
 | Checkpoint Save/Resume | ✅ Compatible | Tested in integration tests |
 | Multi-epoch Training | ✅ Compatible | Pattern validated |
-| Gradient Accumulation | ✅ Compatible | Slime supports this |
+| Gradient Accumulation | ✅ Compatible | Miles supports this |
 | KL Divergence Tracking | ✅ Compatible | Implemented in RL tests |
 | Advantage Computation | ✅ Compatible | Tested in RL rollout tests |
 | Sampling Client | ✅ Compatible | Tested with SGLang backend |
@@ -114,7 +114,7 @@ python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
 ## Known Limitations
 
 ### 1. Model Path Format
-- **Issue:** Cookbook expects HuggingFace model names, but Slime needs local paths
+- **Issue:** Cookbook expects HuggingFace model names, but Miles needs local paths
 - **Workaround:** Use local path for `model_name`, HF name for tokenizer/renderer
 - **Long-term:** Add model path resolution layer in kgateway
 
@@ -168,7 +168,7 @@ python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
 ### RL Recipe Test (2025-10-30)
 ```bash
 python tinker_cookbook/recipes/rl_basic.py \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     model_name=/data/models/Qwen2.5-0.5B-Instruct_torch_dist \
     max_tokens=256
 ```
@@ -181,7 +181,7 @@ python tinker_cookbook/recipes/rl_basic.py \
 - ✅ Checkpoint saved: `save_weights_for_sampler` (26s)
 - ⚠️ Renderer parsing failed (Qwen2.5 stop token mismatch with GSM8K)
 
-**Verdict:** Core kgateway/Slime integration **WORKS**. Renderer issue is cookbook-specific configuration, not an integration problem.
+**Verdict:** Core kgateway/Miles integration **WORKS**. Renderer issue is cookbook-specific configuration, not an integration problem.
 
 ### Integration Tests
 19/19 tests passing validate all core cookbook patterns:
