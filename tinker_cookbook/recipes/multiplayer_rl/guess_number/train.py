@@ -20,6 +20,7 @@ class CLIConfig:
     wandb_project: str | None = None
     wandb_name: str | None = None
     log_path: str | None = None
+    base_url: str | None = None  # GMI: custom API endpoint
 
 
 def build_config(cli_config: CLIConfig) -> train.Config:
@@ -57,6 +58,7 @@ def build_config(cli_config: CLIConfig) -> train.Config:
         eval_every=cli_config.eval_every,
         wandb_project=cli_config.wandb_project,
         wandb_name=wandb_name,
+        base_url=cli_config.base_url,
     )
 
 

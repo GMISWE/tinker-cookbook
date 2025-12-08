@@ -34,8 +34,18 @@ def get_llama_info() -> dict[str, ModelAttributes]:
 def get_qwen_info() -> dict[str, ModelAttributes]:
     org = "Qwen"
     return {
+        # Qwen2.5 models (GMI-specific)
+        "Qwen2.5-0.5B-Instruct": ModelAttributes(org, "2.5", "0.5B", True),
+        "Qwen2.5-1.5B-Instruct": ModelAttributes(org, "2.5", "1.5B", True),
+        "Qwen2.5-3B-Instruct": ModelAttributes(org, "2.5", "3B", True),
+        "Qwen2.5-7B-Instruct": ModelAttributes(org, "2.5", "7B", True),
+        "Qwen2.5-14B-Instruct": ModelAttributes(org, "2.5", "14B", True),
+        "Qwen2.5-32B-Instruct": ModelAttributes(org, "2.5", "32B", True),
+        "Qwen2.5-72B-Instruct": ModelAttributes(org, "2.5", "72B", True),
+        # Qwen3 VL models
         "Qwen3-VL-30B-A3B-Instruct": ModelAttributes(org, "3", "30B-A3B", True, is_vl=True),
         "Qwen3-VL-235B-A22B-Instruct": ModelAttributes(org, "3", "235B-A22B", True, is_vl=True),
+        # Qwen3 models
         "Qwen3-4B-Base": ModelAttributes(org, "3", "4B", False),
         "Qwen3-8B-Base": ModelAttributes(org, "3", "8B", False),
         "Qwen3-14B-Base": ModelAttributes(org, "3", "14B", False),
@@ -107,7 +117,10 @@ def get_recommended_renderer_names(model_name: str) -> list[str]:
     elif attributes.organization == "meta-llama":
         return ["llama3"]
     elif attributes.organization == "Qwen":
-        if attributes.version_str == "3":
+        if attributes.version_str == "2.5":
+            # Qwen2.5 uses qwen3 renderer (same chat template)
+            return ["qwen3"]
+        elif attributes.version_str == "3":
             if attributes.is_vl:
                 if "-Instruct" in model_name:
                     return ["qwen3_vl_instruct"]

@@ -281,6 +281,7 @@ class Config:
     log_path: str = chz.field(munger=lambda _, s: os.path.expanduser(s))
     base_url: str | None = None
     enable_trace: bool = False
+    debug_train_only: bool = False  # GMI: RL needs rollout actors for sampling (Slime-specific)
 
     remove_constant_reward_groups: bool = False
     eval_every: int = 20  # 0 = disabled
@@ -1116,7 +1117,7 @@ async def main(
         logger.info(f"Loaded weights from {cfg.load_checkpoint_path}")
     else:
         training_client = await service_client.create_lora_training_client_async(
-            cfg.model_name, rank=cfg.lora_rank
+            cfg.model_name, rank=cfg.lora_rank, debug_train_only=cfg.debug_train_only
         )
 
     # Get tokenizer from training client

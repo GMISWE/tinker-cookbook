@@ -1,0 +1,6 @@
+{"messages": [{"role": "user", "content": "What is 2+2?"}, {"role": "assistant", "content": "2+2 equals 4."}]}
+{"messages": [{"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "The capital of France is Paris."}]}
+{"messages": [{"role": "user", "content": "Write a hello world program."}, {"role": "assistant", "content": "Here's a simple hello world program:\nprint('Hello, World!')"}]}
+{"messages": [{"role": "user", "content": "What color is the sky?"}, {"role": "assistant", "content": "The sky is typically blue during the day."}]}
+{"messages": [{"role": "user", "content": "How many days are in a week?"}, {"role": "assistant", "content": "There are 7 days in a week."}]}
+{"messages": [{"role": "user", "content": "Who wrote Romeo and Juliet?"}, {"role": "assistant", "content": "William Shakespeare wrote Romeo and Juliet."}]}
