@@ -21,6 +21,7 @@ class CLIConfig:
     wandb_project: str | None = None
     wandb_name: str | None = None
     log_path: str | None = None
+    base_url: str | None = None  # GMI: custom API endpoint
 
     behavior_if_log_dir_exists: cli_utils.LogdirBehavior = "ask"
 
@@ -64,6 +65,7 @@ def build_config(cli_config: CLIConfig) -> train.Config:
         wandb_project=cli_config.wandb_project,
         wandb_name=wandb_name,
         max_steps=cli_config.max_steps,
+        base_url=cli_config.base_url,
     )
 
 

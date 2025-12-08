@@ -395,6 +395,11 @@ class Config:
     # LoRA rank for the training adapter.
     lora_rank: int = 32
 
+    # GMI-specific
+    wandb_project: str | None = None
+    wandb_name: str | None = None
+    debug_train_only: bool = False  # GMI: RL needs rollout actors for sampling (Slime-specific)
+
     # -------------------------------------------------------------------------
     # Sampling and diagnostics (advanced)
     # -------------------------------------------------------------------------
@@ -1549,7 +1554,8 @@ async def main(
         logger.info(f"Loaded weights from {config.load_checkpoint_path}")
     else:
         training_client = await service_client.create_lora_training_client_async(
-            config.model_name, rank=config.lora_rank, user_metadata=user_metadata
+            config.model_name, rank=config.lora_rank, user_metadata=user_metadata,
+            debug_train_only=config.debug_train_only
         )
 
     # Get tokenizer from training client
