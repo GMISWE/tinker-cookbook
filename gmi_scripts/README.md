@@ -1,16 +1,16 @@
 # GMI Wrapper Test Scripts
 
-This directory contains test scripts for the GMI Wrapper (kgateway) integration with Slime RL training cluster.
+This directory contains test scripts for the GMI Wrapper (kgateway) integration with Miles RL training cluster.
 
 ## Architecture
 
 ```
-Tinker Client → GMI Wrapper (kgateway) → Slime Instance
+Tinker Client → GMI Wrapper (kgateway) → Miles Instance
 ```
 
 - **Tinker Client**: Uses tinker-cookbook recipes to run RL training
 - **GMI Wrapper**: kgateway service that implements Tinker API endpoints
-- **Slime Instance**: Ray-based distributed training cluster with Megatron backend
+- **Miles Instance**: Ray-based distributed training cluster with Megatron backend
 
 ## Scripts
 
@@ -24,13 +24,13 @@ Runs a successful math RL training test with arithmetic environment.
 ```
 
 **Prerequisites:**
-1. Kubernetes cluster with slime-gmi namespace
-2. slime-training-0 pod running with:
+1. Kubernetes cluster with miles-gmi-tinker namespace
+2. miles-training-0 pod running with:
    - Ray cluster initialized (DP=2, PP=2, TP=1)
    - Model: `/data/models/Qwen2.5-0.5B-Instruct`
    - tinker_gmi and tinker-cookbook packages installed
 3. kgateway-training deployment running
-4. Service: `kgateway-training.slime-gmi:8000`
+4. Service: `kgateway-training.miles-gmi-tinker:8000`
 
 **Parameters:**
 - `group_size=4`: 4 samples per trajectory group
@@ -45,7 +45,7 @@ Runs a successful math RL training test with arithmetic environment.
 
 **Symptom:**
 ```
-AssertionError at slime/backends/megatron_utils/data.py:231
+AssertionError at miles/backends/megatron_utils/data.py:231
 assert len(set(sum(micro_batch_indices, []))) == num_local_samples
 ```
 
@@ -68,9 +68,9 @@ With `num_substeps=1` and 8 samples:
 - Single chunk has all 8 samples
 - `forward_backward()` is called 1 time with 8 samples
 
-**Slime Expectation:**
+**Miles Expectation:**
 
-Slime's Megatron backend expects a fixed `global_batch_size` set during model creation:
+Miles's Megatron backend expects a fixed `global_batch_size` set during model creation:
 
 ```python
 # kgateway/python/ai_extension/training/api.py:419
@@ -79,7 +79,7 @@ Slime's Megatron backend expects a fixed `global_batch_size` set during model cr
 
 With DP (data parallel) = 2:
 ```python
-# slime/backends/megatron_utils/data.py:182
+# miles/backends/megatron_utils/data.py:182
 num_local_gbs = args.global_batch_size // dp_size  # 8 // 2 = 4
 ```
 
@@ -87,14 +87,14 @@ Each DP rank expects exactly 4 samples per forward_backward call.
 
 **Mismatch:**
 - Client sends: 1 sample (with num_substeps=10)
-- Slime expects: 4 samples per rank
+- Miles expects: 4 samples per rank
 - Result: Assertion fails
 
 ### The Solution
 
 Set `num_substeps=1` to send all 8 samples together:
 - Client sends: 8 samples
-- Slime receives: 8 samples total, 4 per DP rank
+- Miles receives: 8 samples total, 4 per DP rank
 - Result: Batch size matches, training succeeds
 
 ### Why Not Override args.global_batch_size?
@@ -119,7 +119,7 @@ Modifying `client_info["args"]` in kgateway has **zero effect** on Ray actors' s
 ### Alternative Solutions (Not Chosen)
 
 1. **Accumulate chunks in kgateway** - Complex state management, breaks request/response contract
-2. **Modify Slime to accept dynamic batch sizes** - Requires Slime code changes (against constraints)
+2. **Modify Miles to accept dynamic batch sizes** - Requires Miles code changes (against constraints)
 3. **Set global_batch_size=1** - Kills performance, defeats distributed training purpose
 4. **Fork Tinker client** - Not maintainable, diverges from upstream
 
@@ -152,24 +152,24 @@ All trajectories should have `reward=1` (correct answers) and the test should co
 ### Error: Connection refused
 ```bash
 # Check kgateway pod is running
-kubectl get pods -n slime-gmi -l app=kgateway-training
+kubectl get pods -n miles-gmi-tinker -l app=kgateway-training
 
 # Check service
-kubectl get svc -n slime-gmi kgateway-training
+kubectl get svc -n miles-gmi-tinker kgateway-training
 ```
 
 ### Error: Model not found in /data/models
 ```bash
-# Check model exists in slime-training-0
-kubectl exec -n slime-gmi slime-training-0 -- ls -la /data/models/
+# Check model exists in miles-training-0
+kubectl exec -n miles-gmi-tinker miles-training-0 -- ls -la /data/models/
 ```
 
 ### Error: tinker_gmi module not found
 ```bash
 # Reinstall packages
-kubectl cp /tmp/tmux-tmp/tinker_gmi slime-gmi/slime-training-0:/tmp/tinker_gmi
-kubectl cp /tmp/tmux-tmp/tinker-cookbook slime-gmi/slime-training-0:/tmp/tinker-cookbook
-kubectl exec -n slime-gmi slime-training-0 -- bash -c "cd /tmp/tinker_gmi && pip install -e . && cd /tmp/tinker-cookbook && pip install -e ."
+kubectl cp /tmp/tmux-tmp/tinker_gmi miles-gmi-tinker/miles-training-0:/tmp/tinker_gmi
+kubectl cp /tmp/tmux-tmp/tinker-cookbook miles-gmi-tinker/miles-training-0:/tmp/tinker-cookbook
+kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c "cd /tmp/tinker_gmi && pip install -e . && cd /tmp/tinker-cookbook && pip install -e ."
 ```
 
 ### Error: Batch size mismatch (after changing num_substeps)
@@ -181,7 +181,7 @@ total_samples = group_size × groups_per_batch
 num_chunks = min(num_substeps, total_samples)
 samples_per_chunk = total_samples / num_chunks
 
-For Slime to accept:
+For Miles to accept:
 samples_per_chunk × dp_size = global_batch_size
 ```
 
@@ -191,30 +191,30 @@ samples_per_chunk × dp_size = global_batch_size
 - Required: samples_per_chunk × 2 = 8 → samples_per_chunk = 4
 
 Options:
-1. num_substeps=1: 8 samples / 1 chunk = 8 samples per chunk ✅ (8 × 2 = 16, but Slime accepts multiples)
+1. num_substeps=1: 8 samples / 1 chunk = 8 samples per chunk ✅ (8 × 2 = 16, but Miles accepts multiples)
 2. num_substeps=2: 8 samples / 2 chunks = 4 samples per chunk ✅ (4 × 2 = 8, perfect match)
 
 ## Future Work
 
 1. **Make global_batch_size configurable**: Add parameter to `create_model` API
-2. **Dynamic batch size support in Slime**: Modify Slime to infer batch size from data
+2. **Dynamic batch size support in Miles**: Modify Miles to infer batch size from data
 3. **Better error messages**: Add validation in kgateway to detect mismatches early
 
 ---
 
 ## Tinker-Cookbook Verification Tests (Tests 3-7)
 
-The following scripts verify that tinker-cookbook recipes work with the GMI/Slime environment. These correspond to 5 of the 7 post-training examples from tinker-cookbook/recipes.
+The following scripts verify that tinker-cookbook recipes work with the GMI/Miles environment. These correspond to 5 of the 7 post-training examples from tinker-cookbook/recipes.
 
 ### Prerequisites (All Tests)
 
-1. Kubernetes cluster with slime-gmi namespace
-2. slime-training-0 pod running with:
+1. Kubernetes cluster with miles-gmi-tinker namespace
+2. miles-training-0 pod running with:
    - Ray cluster initialized (DP=2, PP=2, TP=1)
    - Model: `/data/models/Qwen2.5-0.5B-Instruct`
    - tinker_gmi and tinker-cookbook packages installed
 3. kgateway-training deployment running
-4. Service: `kgateway-training.slime-gmi:8000`
+4. Service: `kgateway-training.miles-gmi-tinker:8000`
 
 ### Test 3: Preference Learning - Shorter Responses
 
@@ -358,7 +358,7 @@ To run tests 3-7 sequentially:
 cd /tmp/tmux-tmp/tinker-cookbook/gmi_scripts
 
 # Cleanup command
-CLEANUP="kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/tinker_gmi/tests_integration/cleanup_test_env.py"
+CLEANUP="kubectl exec -n miles-gmi-tinker miles-training-0 -- python -u /tmp/tinker_gmi/tests_integration/cleanup_test_env.py"
 
 # Test 3: Preference/Shorter (RL)
 echo "=== Test 3: Preference Learning - Shorter ===" && \
@@ -409,28 +409,28 @@ $CLEANUP && ./test_dpo.sh
 ### Issue: "Model not found"
 Check model exists in pod:
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- ls -la /data/models/
+kubectl exec -n miles-gmi-tinker miles-training-0 -- ls -la /data/models/
 ```
 
 ### Issue: "Connection refused to kgateway"
 Check kgateway pod is running:
 ```bash
-kubectl get pods -n slime-gmi -l app=kgateway-training
-kubectl logs -n slime-gmi deployment/kgateway-training --tail=50
+kubectl get pods -n miles-gmi-tinker -l app=kgateway-training
+kubectl logs -n miles-gmi-tinker deployment/kgateway-training --tail=50
 ```
 
 ### Issue: "tinker_gmi module not found"
 Reinstall packages:
 ```bash
-kubectl cp /tmp/tmux-tmp/tinker_gmi slime-gmi/slime-training-0:/tmp/tinker_gmi
-kubectl cp /tmp/tmux-tmp/tinker-cookbook slime-gmi/slime-training-0:/tmp/tinker-cookbook
-kubectl exec -n slime-gmi slime-training-0 -- bash -c "cd /tmp/tinker_gmi && pip install -e . && cd /tmp/tinker-cookbook && pip install -e ."
+kubectl cp /tmp/tmux-tmp/tinker_gmi miles-gmi-tinker/miles-training-0:/tmp/tinker_gmi
+kubectl cp /tmp/tmux-tmp/tinker-cookbook miles-gmi-tinker/miles-training-0:/tmp/tinker-cookbook
+kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c "cd /tmp/tinker_gmi && pip install -e . && cd /tmp/tinker-cookbook && pip install -e ."
 ```
 
 ### Issue: Ray actors not spawning (RL tests)
 Check Ray cluster status:
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- ray list actors --filter "state=ALIVE"
+kubectl exec -n miles-gmi-tinker miles-training-0 -- ray list actors --filter "state=ALIVE"
 ```
 
-If actors are not running, restart slime pod, then restart kgateway pod.
+If actors are not running, restart miles pod, then restart kgateway pod.

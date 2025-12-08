@@ -51,7 +51,7 @@ GPU Memory = Megatron (11 GB) + SGLang (batch × tokens × hidden)
 model_name=/data/models/Qwen2.5-0.5B-Instruct
 renderer_name=qwen3
 env=gsm8k
-base_url=http://kgateway-training.slime-gmi:8000
+base_url=http://kgateway-training.miles-gmi-tinker:8000
 group_size=4
 groups_per_batch=2
 learning_rate=2e-4
@@ -123,7 +123,7 @@ num_substeps=1
    - Full training pipeline functional (sample → train → eval → checkpoint)
    - Ray actors spawned correctly (4 Megatron + 4 SGLang)
    - kgateway API handled all requests without errors
-   - Slime backend executed distributed training (DP=2, PP=2)
+   - Miles backend executed distributed training (DP=2, PP=2)
 
 3. **Monitoring Effectiveness**
    - Comprehensive logs captured GPU memory at all stages
@@ -207,7 +207,7 @@ Successfully diagnosed OOM root cause (SGLang KV cache with max_tokens=256) and 
 **Secondary Objective: ⚠️ EXPECTED LIMITATION**
 Low accuracy (0-37%) confirmed that 0.5B model is too small for GSM8K, but this doesn't affect the OOM validation.
 
-**Status:** GSM8K recipe is **functional** with our kgateway/Slime environment when properly configured. The tinker-cookbook works as-is with minimal modification (reduce max_tokens parameter).
+**Status:** GSM8K recipe is **functional** with our kgateway/Miles environment when properly configured. The tinker-cookbook works as-is with minimal modification (reduce max_tokens parameter).
 
 ---
 
