@@ -1,0 +1,20 @@
+{"messages": [{"role": "user", "content": "Hello, how are you today?"}, {"role": "assistant", "content": "Final Answer: en"}]}
+{"messages": [{"role": "user", "content": "Bonjour, comment allez-vous?"}, {"role": "assistant", "content": "Final Answer: fr"}]}
+{"messages": [{"role": "user", "content": "你好，今天天气怎么样？"}, {"role": "assistant", "content": "Final Answer: zh"}]}
+{"messages": [{"role": "user", "content": "Hola, ¿cómo estás?"}, {"role": "assistant", "content": "Final Answer: es"}]}
+{"messages": [{"role": "user", "content": "Guten Tag, wie geht es Ihnen?"}, {"role": "assistant", "content": "Final Answer: de"}]}
+{"messages": [{"role": "user", "content": "Привет, как дела?"}, {"role": "assistant", "content": "Final Answer: ru"}]}
+{"messages": [{"role": "user", "content": "Ciao, come stai?"}, {"role": "assistant", "content": "Final Answer: it"}]}
+{"messages": [{"role": "user", "content": "こんにちは、元気ですか？"}, {"role": "assistant", "content": "Final Answer: ot"}]}
+{"messages": [{"role": "user", "content": "Merhaba, nasılsın?"}, {"role": "assistant", "content": "Final Answer: tr"}]}
+{"messages": [{"role": "user", "content": "Xin chào, bạn khỏe không?"}, {"role": "assistant", "content": "Final Answer: vi"}]}
+{"messages": [{"role": "user", "content": "مرحبا، كيف حالك؟"}, {"role": "assistant", "content": "Final Answer: ar"}]}
+{"messages": [{"role": "user", "content": "Γεια σου, πώς είσαι;"}, {"role": "assistant", "content": "Final Answer: el"}]}
+{"messages": [{"role": "user", "content": "The quick brown fox jumps over the lazy dog."}, {"role": "assistant", "content": "Final Answer: en"}]}
+{"messages": [{"role": "user", "content": "Je t'aime beaucoup."}, {"role": "assistant", "content": "Final Answer: fr"}]}
+{"messages": [{"role": "user", "content": "我喜欢学习中文。"}, {"role": "assistant", "content": "Final Answer: zh"}]}
+{"messages": [{"role": "user", "content": "Me gusta aprender español."}, {"role": "assistant", "content": "Final Answer: es"}]}
+{"messages": [{"role": "user", "content": "Ich lerne gerne Deutsch."}, {"role": "assistant", "content": "Final Answer: de"}]}
+{"messages": [{"role": "user", "content": "Я люблю изучать русский язык."}, {"role": "assistant", "content": "Final Answer: ru"}]}
+{"messages": [{"role": "user", "content": "Tôi thích học tiếng Việt."}, {"role": "assistant", "content": "Final Answer: vi"}]}
+{"messages": [{"role": "user", "content": "أنا أحب تعلم اللغة العربية."}, {"role": "assistant", "content": "Final Answer: ar"}]}
