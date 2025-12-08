@@ -7,11 +7,11 @@
 # Expected: The policy should learn to efficiently narrow down the target number
 #
 # Prerequisites:
-# - slime-training-0 pod running with Ray cluster (DP=2, PP=2)
+# - miles-training-0 pod running with Ray cluster (DP=2, PP=2)
 # - kgateway-training deployment up and running
-# - tinker_gmi and tinker-cookbook installed in slime-training-0 pod
+# - tinker_gmi and tinker-cookbook installed in miles-training-0 pod
 
-kubectl exec -n slime-gmi slime-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && export TINKER_BASE_URL=http://kgateway-training.slime-gmi:8000 && python -m tinker_cookbook.recipes.multiplayer_rl.guess_number.train \
+kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && export TINKER_BASE_URL=http://kgateway-training.miles-gmi-tinker:8000 && python -m tinker_cookbook.recipes.multiplayer_rl.guess_number.train \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
     group_size=4 \

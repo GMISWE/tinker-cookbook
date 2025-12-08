@@ -1,6 +1,6 @@
 """
 Minimal supervised learning test using tinker-cookbook pattern.
-Tests compatibility with kgateway-training + Slime backend.
+Tests compatibility with kgateway-training + Miles backend.
 """
 import asyncio
 import chz
@@ -43,7 +43,7 @@ def build_config_blueprint() -> chz.Blueprint[train.Config]:
         "eval_every": 0,  # No evaluation for now
         "save_every": 0,  # No checkpointing for now
         # Point to kgateway-training service
-        "base_url": "http://kgateway-training.slime-gmi:8000",
+        "base_url": "http://kgateway-training.miles-gmi-tinker:8000",
     })
 
 

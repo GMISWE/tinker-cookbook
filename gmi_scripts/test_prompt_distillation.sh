@@ -7,20 +7,20 @@
 # This is an SFT task (debug_train_only=True)
 #
 # Prerequisites:
-# - slime-training-0 pod running with Ray cluster (DP=2, PP=2)
+# - miles-training-0 pod running with Ray cluster (DP=2, PP=2)
 # - kgateway-training deployment up and running
-# - tinker_gmi and tinker-cookbook installed in slime-training-0 pod
+# - tinker_gmi and tinker-cookbook installed in miles-training-0 pod
 
 # Copy the minimal dataset to the pod
 echo "Copying minimal language classification dataset to pod..."
-kubectl cp /tmp/tmux-tmp/tinker-cookbook/gmi_scripts/minimal_lang_data.jsonl slime-gmi/slime-training-0:/tmp/minimal_lang_data.jsonl
+kubectl cp /tmp/tmux-tmp/tinker-cookbook/gmi_scripts/minimal_lang_data.jsonl miles-gmi-tinker/miles-training-0:/tmp/minimal_lang_data.jsonl
 
 # Run the training
 echo "Starting prompt distillation training..."
-kubectl exec -n slime-gmi slime-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && python -m tinker_cookbook.recipes.prompt_distillation.train \
+kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && python -m tinker_cookbook.recipes.prompt_distillation.train \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     file_path=/tmp/minimal_lang_data.jsonl \
     batch_size=4 \
     learning_rate=1e-4 \

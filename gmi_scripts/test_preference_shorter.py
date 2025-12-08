@@ -43,7 +43,7 @@ def build_config() -> train.Config:
         max_tokens=64,
         eval_every=5,
         compute_post_kl=True,  # Re-enabled to test SGLang prompt_logprobs with logging
-        base_url="http://kgateway-training.slime-gmi:8000",
+        base_url="http://kgateway-training.miles-gmi-tinker:8000",
         debug_train_only=False,  # RL needs SGLang for sampling
     )
 

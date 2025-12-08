@@ -13,14 +13,14 @@
 # - max_prompts: 100→50 (reduced dataset size for faster testing)
 #
 # Prerequisites:
-# - slime-training-0 pod running with Ray cluster (DP=2, PP=2)
+# - miles-training-0 pod running with Ray cluster (DP=2, PP=2)
 # - kgateway-training deployment up and running
-# - tinker_gmi and tinker-cookbook installed in slime-training-0 pod
+# - tinker_gmi and tinker-cookbook installed in miles-training-0 pod
 
-kubectl exec -n slime-gmi slime-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && python -m tinker_cookbook.recipes.distillation.off_policy_reasoning \
+kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c 'export TINKER_API_KEY=slime-dev-key && python -m tinker_cookbook.recipes.distillation.off_policy_reasoning \
     model_name=/data/models/Qwen2.5-0.5B-Instruct \
     renderer_name=qwen3 \
-    base_url=http://kgateway-training.slime-gmi:8000 \
+    base_url=http://kgateway-training.miles-gmi-tinker:8000 \
     batch_size=4 \
     learning_rate=1e-4 \
     lora_rank=32 \

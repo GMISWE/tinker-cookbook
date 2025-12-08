@@ -20,16 +20,16 @@ The tinker-cookbook **CAN** run with your kgateway-training setup. All required 
 
 ### Prerequisites (One-time Setup)
 
-1. **Copy test data to slime pod:**
+1. **Copy test data to miles pod:**
    ```bash
    # Copy RL test data
    kubectl cp /tmp/tmux-tmp/kgateway/python/ai_extension/training/test_data/gsm8k_rl.jsonl \
-     slime-gmi/slime-training-0:/data/datasets/gsm8k_rl.jsonl
+     miles-gmi-tinker/miles-training-0:/data/datasets/gsm8k_rl.jsonl
    ```
 
-2. **Install tinker-cookbook in slime-training pod:**
+2. **Install tinker-cookbook in miles-training pod:**
    ```bash
-   kubectl exec -n slime-gmi slime-training-0 -- bash -c "
+   kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c "
      pip install chz termcolor
      cd /tmp && git clone https://github.com/thinking-machines/tinker-cookbook.git || true
      cd /tmp/tinker-cookbook && pip install -e . --no-deps
@@ -38,9 +38,9 @@ The tinker-cookbook **CAN** run with your kgateway-training setup. All required 
 
 3. **Set environment variables:**
    ```bash
-   kubectl exec -n slime-gmi slime-training-0 -- bash -c "
-     echo 'export TINKER_API_KEY=slime-dev-key' >> ~/.bashrc
-     echo 'export TINKER_BASE_URL=http://kgateway-training.slime-gmi:8000' >> ~/.bashrc
+   kubectl exec -n miles-gmi-tinker miles-training-0 -- bash -c "
+     echo 'export TINKER_API_KEY=miles-dev-key' >> ~/.bashrc
+     echo 'export TINKER_BASE_URL=http://kgateway-training.miles-gmi-tinker:8000' >> ~/.bashrc
    "
    ```
 
@@ -52,8 +52,8 @@ This is the **easiest approach** - no code modifications needed, just override t
 
 **Supervised Learning:**
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- python /tmp/tinker-cookbook/tinker_cookbook/recipes/sl_basic.py \
-  base_url=http://kgateway-training.slime-gmi:8000 \
+kubectl exec -n miles-gmi-tinker miles-training-0 -- python /tmp/tinker-cookbook/tinker_cookbook/recipes/sl_basic.py \
+  base_url=http://kgateway-training.miles-gmi-tinker:8000 \
   model_name=/data/models/Qwen2.5-0.5B-Instruct_torch_dist \
   log_path=/tmp/cookbook-sl-test \
   num_epochs=1 \
@@ -62,8 +62,8 @@ kubectl exec -n slime-gmi slime-training-0 -- python /tmp/tinker-cookbook/tinker
 
 **Reinforcement Learning:**
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
-  base_url=http://kgateway-training.slime-gmi:8000 \
+kubectl exec -n miles-gmi-tinker miles-training-0 -- python /tmp/tinker-cookbook/tinker_cookbook/recipes/rl_basic.py \
+  base_url=http://kgateway-training.miles-gmi-tinker:8000 \
   model_name=/data/models/Qwen2.5-0.5B-Instruct_torch_dist \
   log_path=/tmp/cookbook-rl-test \
   max_tokens=256 \
@@ -109,7 +109,7 @@ def build_config() -> train.Config:
         lr_schedule="linear",
         num_epochs=1,
         eval_every=10,
-        base_url="http://kgateway-training.slime-gmi:8000",
+        base_url="http://kgateway-training.miles-gmi-tinker:8000",
         debug_train_only=True,  # SFT: no rollout actors needed
     )
 
@@ -148,7 +148,7 @@ def build_config() -> train.Config:
         learning_rate=4e-5,
         max_tokens=256,
         eval_every=0,
-        base_url="http://kgateway-training.slime-gmi:8000",
+        base_url="http://kgateway-training.miles-gmi-tinker:8000",
         debug_train_only=False,  # RL: enable rollout actors
     )
 
@@ -158,20 +158,20 @@ if __name__ == "__main__":
     asyncio.run(train.main(config))
 ```
 
-**3. Copy to slime pod and run:**
+**3. Copy to miles pod and run:**
 ```bash
 # Copy scripts
 kubectl cp /tmp/tmux-tmp/tinker-cookbook/test_sl_minimal.py \
-  slime-gmi/slime-training-0:/tmp/test_sl_minimal.py
+  miles-gmi-tinker/miles-training-0:/tmp/test_sl_minimal.py
 
 kubectl cp /tmp/tmux-tmp/tinker-cookbook/test_rl_minimal.py \
-  slime-gmi/slime-training-0:/tmp/test_rl_minimal.py
+  miles-gmi-tinker/miles-training-0:/tmp/test_rl_minimal.py
 
 # Run SFT test
-kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/test_sl_minimal.py
+kubectl exec -n miles-gmi-tinker miles-training-0 -- python -u /tmp/test_sl_minimal.py
 
 # Run RL test (after cleanup)
-kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/test_rl_minimal.py
+kubectl exec -n miles-gmi-tinker miles-training-0 -- python -u /tmp/test_rl_minimal.py
 ```
 
 ---
@@ -195,7 +195,7 @@ kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/test_rl_minimal.py
 
 | Parameter | Purpose | Example Value |
 |-----------|---------|---------------|
-| `base_url` | kgateway-training endpoint | `http://kgateway-training.slime-gmi:8000` |
+| `base_url` | kgateway-training endpoint | `http://kgateway-training.miles-gmi-tinker:8000` |
 | `model_name` | Local model path | `/data/models/Qwen2.5-0.5B-Instruct_torch_dist` |
 | `log_path` | Training logs directory | `/tmp/cookbook-test` |
 | `learning_rate` | Optimizer learning rate | `2e-4` (SFT), `4e-5` (RL) |
@@ -224,9 +224,9 @@ kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/test_rl_minimal.py
 ## Troubleshooting
 
 ### Issue: "Model not found" error
-**Solution:** Verify model path exists in slime pod:
+**Solution:** Verify model path exists in miles pod:
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- ls -la /data/models/
+kubectl exec -n miles-gmi-tinker miles-training-0 -- ls -la /data/models/
 ```
 
 ### Issue: "Renderer parsing failed"
@@ -240,14 +240,14 @@ kubectl exec -n slime-gmi slime-training-0 -- ls -la /data/models/
 ### Issue: Need to cleanup between tests
 **Solution:** Use cleanup script:
 ```bash
-kubectl exec -n slime-gmi slime-training-0 -- python -u /tmp/tinker_gmi/tests_integration/cleanup_test_env.py
+kubectl exec -n miles-gmi-tinker miles-training-0 -- python -u /tmp/tinker_gmi/tests_integration/cleanup_test_env.py
 ```
 
 ### Issue: kgateway not responding
 **Solution:** Check pod status and logs:
 ```bash
-kubectl get pods -n slime-gmi | grep kgateway
-kubectl logs -n slime-gmi deployment/kgateway-training --tail=50
+kubectl get pods -n miles-gmi-tinker | grep kgateway
+kubectl logs -n miles-gmi-tinker deployment/kgateway-training --tail=50
 ```
 
 ### Issue: Ray actors not spawning (RL)
@@ -255,9 +255,9 @@ kubectl logs -n slime-gmi deployment/kgateway-training --tail=50
 1. Check `debug_train_only=False` for RL
 2. Verify Ray actors:
    ```bash
-   kubectl exec -n slime-gmi slime-training-0 -- ray list actors --filter "state=ALIVE"
+   kubectl exec -n miles-gmi-tinker miles-training-0 -- ray list actors --filter "state=ALIVE"
    ```
-3. Restart slime pod if needed, then restart kgateway
+3. Restart miles pod if needed, then restart kgateway
 
 ---
 
@@ -342,10 +342,10 @@ Run Option 1 (command-line overrides) to validate both SFT and RL recipes work e
 Before running cookbook recipes, ensure:
 
 - [ ] kgateway-training pod is running and healthy
-- [ ] slime-training pod is running with Ray actors alive
-- [ ] tinker-cookbook installed in slime pod
-- [ ] Test data copied to `/data/datasets/` in slime pod
-- [ ] Model paths verified in `/data/models/` in slime pod
+- [ ] miles-training pod is running with Ray actors alive
+- [ ] tinker-cookbook installed in miles pod
+- [ ] Test data copied to `/data/datasets/` in miles pod
+- [ ] Model paths verified in `/data/models/` in miles pod
 - [ ] Environment variables set (TINKER_API_KEY, TINKER_BASE_URL)
 - [ ] Integration tests passing (optional but recommended)
 
