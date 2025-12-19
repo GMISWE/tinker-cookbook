@@ -24,6 +24,7 @@ class StepResult:
     next_observation: Observation
     next_stop_condition: StopCondition
     metrics: Metrics = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -33,6 +34,7 @@ class Transition:
     reward: float
     episode_done: bool
     metrics: Metrics = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
 
 class Env(ABC):
