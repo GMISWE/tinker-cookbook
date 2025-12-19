@@ -541,6 +541,7 @@ async def do_sync_training_with_stream_minibatch(
         config.save_every,
         start_batch,
         config.ttl_seconds,
+        dataset=dataset,
     )
 
     for i_batch in range(start_batch, end_batch):
@@ -627,6 +628,7 @@ async def do_sync_training_with_stream_minibatch(
                     training_client,
                     kl_reference_client,
                     tokenizer,
+                    dataset=dataset,
                 )
                 # _Shutdown cannot appear in the sync path's local queue
                 assert streaming_result is not None, "Unexpected shutdown in sync streaming path"
@@ -902,6 +904,7 @@ async def do_async_training(
                         kl_reference_client,
                         tokenizer,
                         filter_stale_trajectory_group,
+                        dataset=dataset,
                     )
                 if streaming_result is None:
                     logger.info("[training_loop] Received shutdown signal from streaming")
@@ -966,6 +969,7 @@ async def do_async_training(
                         tokenizer,
                         [g.env_group_builder for g in wrapped_trajectory_groups],
                         [g.trajectory_group for g in wrapped_trajectory_groups],
+                        dataset=dataset,
                     )
                 iter_dir = iteration_dir(config.log_path, i_batch)
                 _maybe_export_rollout_summary_jsonl(
@@ -1052,9 +1056,15 @@ async def save_checkpoint_and_get_sampling_client(
     save_every: int,
     start_batch: int = 0,
     ttl_seconds: int | None = None,
+    dataset: RLDataset | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     metrics: dict[str, Any] = {}
     async with trace.scope_span("save_checkpoint"):
+        # Save dataset state if the dataset has a save_state method
+        if dataset is not None and hasattr(dataset, "save_state"):
+            dataset_state_path = dataset.save_state(log_path, f"{i_batch:06d}")
+            logger.info(f"Saved dataset state to {dataset_state_path}")
+
         if save_every > 0 and i_batch > start_batch and i_batch % save_every == 0:
             path_dict = await checkpoint_utils.save_checkpoint_async(
                 training_client=training_client,
@@ -1118,6 +1128,7 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     save_every: int,
     do_compute_post_kl: bool,
     ttl_seconds: int | None = None,
+    dataset: RLDataset | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     """
     At the end of the iteration, this will compute metrics for the full batch
@@ -1135,7 +1146,7 @@ async def compute_full_batch_metrics_and_get_sampling_client(
 
     # Get a sampling client using the new weights
     sampling_client, checkpoint_metrics = await save_checkpoint_and_get_sampling_client(
-        training_client, i_batch, log_path, save_every, ttl_seconds=ttl_seconds
+        training_client, i_batch, log_path, save_every, ttl_seconds=ttl_seconds, dataset=dataset
     )
     metrics.update(checkpoint_metrics)
 
@@ -1157,6 +1168,7 @@ async def do_train_step_streaming_and_get_sampling_client(
     kl_reference_client: tinker.SamplingClient | None,
     tokenizer: Tokenizer,
     trajectory_group_filter: Callable[[WrappedTrajectoryGroup | None], bool] = lambda _: True,
+    dataset: RLDataset | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any], list[WrappedTrajectoryGroup]] | None:
     """
     As soon as we have enough trajectories for a minibatch, we will train on them.
@@ -1280,6 +1292,7 @@ async def do_train_step_streaming_and_get_sampling_client(
         config.save_every,
         config.compute_post_kl,
         config.ttl_seconds,
+        dataset=dataset,
     )
     metrics.update(full_batch_metrics)
     return sampling_client, metrics, all_wrapped_trajectory_groups
@@ -1294,6 +1307,7 @@ async def do_train_step_and_get_sampling_client(
     tokenizer: Tokenizer,
     env_group_builders_P: Sequence[EnvGroupBuilder],
     trajectory_groups_P: list[TrajectoryGroup],
+    dataset: RLDataset | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     trace.update_scope_context({"step": i_batch})
 
@@ -1328,6 +1342,7 @@ async def do_train_step_and_get_sampling_client(
         config.save_every,
         config.compute_post_kl,
         config.ttl_seconds,
+        dataset=dataset,
     )
     metrics.update(full_batch_metrics)
 
@@ -1358,6 +1373,7 @@ async def do_sync_training(
         config.save_every,
         start_batch,
         config.ttl_seconds,
+        dataset=dataset,
     )
 
     for i_batch in range(start_batch, end_batch):
@@ -1453,6 +1469,7 @@ async def do_sync_training(
                     tokenizer,
                     env_group_builders_P,
                     trajectory_groups_P,
+                    dataset=dataset,
                 )
 
                 metrics.update(train_step_metrics)
@@ -1576,6 +1593,21 @@ async def main(
                 strategy=strategy,
             )
         )
+
+    # Load dataset state if resuming from checkpoint
+    if resume_info and hasattr(dataset, "load_state"):
+        # Construct the dataset state path from the checkpoint name
+        checkpoint_name = resume_info.get("name", f"{resume_info['batch']:06d}")
+        dataset_state_path = os.path.join(
+            cfg.log_path, f"rlve_manager_{checkpoint_name}.json"
+        )
+        if os.path.exists(dataset_state_path):
+            dataset.load_state(dataset_state_path)
+            logger.info(f"Loaded dataset state from {dataset_state_path}")
+        else:
+            logger.warning(
+                f"Dataset state file not found at {dataset_state_path}, starting with fresh state"
+            )
 
     num_batches = len(dataset)
     end_batch = min(config.max_steps, num_batches) if config.max_steps is not None else num_batches
