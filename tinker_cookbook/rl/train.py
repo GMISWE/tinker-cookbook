@@ -28,11 +28,11 @@ from tinker_cookbook.rl.data_processing import (
 )
 from tinker_cookbook.rl.metric_util import RLTestSetEvaluator, compute_trajectory_metrics
 from tinker_cookbook.rl.metrics import (
-    compute_kl_sample_train,
     compute_post_kl,
     compute_sampling_client_metrics,
     incorporate_kl_penalty,
 )
+# Note: compute_kl_sample_train removed - now using ppo_kl from Miles (Megatron-vs-Megatron)
 from tinker_cookbook.rl.rollouts import do_group_rollout
 from tinker_cookbook.rl.types import (
     EnvGroupBuilder,
@@ -177,6 +177,15 @@ def _training_logprobs_from_fwd_bwd(
     return [output["logprobs"].to_torch() for output in fwd_bwd_result.loss_fn_outputs]
 
 
+def _aggregate_metrics(
+    aggregated: dict[str, float], batch_metrics: dict[str, Any]
+) -> None:
+    """Aggregate metrics from a batch into the accumulated metrics dict (in-place)."""
+    for key, value in batch_metrics.items():
+        if isinstance(value, (int, float)):
+            aggregated[key] = aggregated.get(key, 0.0) + float(value)
+
+
 @scope
 async def train_step(
     data_D: List[tinker.Datum],
@@ -184,17 +193,22 @@ async def train_step(
     learning_rate: float,
     num_substeps: int,
     loss_fn: LossFnType,
-) -> List[torch.Tensor]:
+) -> tuple[List[torch.Tensor], dict[str, Any]]:
     """Train the model on collected trajectories.
 
     Pipelines forward_backward and optim_step so they land on the same clock cycle.
+
+    Returns:
+        Tuple of (training_logprobs_D, aggregated_metrics) where metrics
+        are summed/averaged across substeps from Miles.
     """
     batches = split_list(data_D, min(num_substeps, len(data_D)))
     if not batches:
-        return []
+        return [], {}
 
     adam_params = tinker.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     training_logprobs_D: list[torch.Tensor] = []
+    aggregated_metrics: dict[str, float] = {}
 
     # Enqueue first batch
     fwd_bwd_future = await training_client.forward_backward_async(
@@ -215,13 +229,14 @@ async def train_step(
         # Consume current results
         fwd_bwd_result = await fwd_bwd_future.result_async()
         training_logprobs_D.extend(_training_logprobs_from_fwd_bwd(fwd_bwd_result))
+        _aggregate_metrics(aggregated_metrics, fwd_bwd_result.metrics)
         await optim_future.result_async()
         # Move to next iteration
         if next_fwd_bwd_future is not None and next_optim_future is not None:
             fwd_bwd_future = next_fwd_bwd_future
             optim_future = next_optim_future
 
-    return training_logprobs_D
+    return training_logprobs_D, aggregated_metrics
 
 
 @chz.chz
@@ -441,6 +456,9 @@ async def do_sync_training_with_stream_minibatch(
         # Log metrics
         metrics.update(full_batch_metrics)
         metrics["time/total"] = time.time() - t_start
+        # Log RLVE per-environment metrics if available
+        if hasattr(dataset, 'rlve_manager'):
+            metrics.update(dataset.rlve_manager.get_metrics())
         ml_logger.log_metrics(metrics, step=i_batch)
 
 
@@ -650,6 +668,9 @@ async def do_async_training(
             # Log metrics
             metrics.update(train_step_metrics)
             metrics["time/training_loop/total"] = time.time() - t_start
+            # Log RLVE per-environment metrics if available
+            if hasattr(dataset, 'rlve_manager'):
+                metrics.update(dataset.rlve_manager.get_metrics())
             ml_logger.log_metrics(metrics, step=i_batch)
             i_batch += 1
             wrapped_trajectory_groups = []
@@ -790,6 +811,7 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     i_batch: int,
     data_D: list[tinker.Datum],
     training_logprobs_D: list[torch.Tensor],
+    miles_metrics: dict[str, Any],
     log_path: str,
     save_every: int,
     do_compute_post_kl: bool,
@@ -801,13 +823,28 @@ async def compute_full_batch_metrics_and_get_sampling_client(
 
     The reason we return a sampling client is that if do_compute_post_kl is True,
     we need to create a sampling client from the post-update policy.
+
+    Args:
+        miles_metrics: Metrics from Miles (ppo_kl, pg_clipfrac, etc.) - these are
+            Megatron-vs-Megatron metrics, consistent with the training engine.
     """
     metrics = {}
 
-    # Compute KL metrics
-    with timed("compute_kl_sample_train", metrics):
-        kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
-        metrics.update(kl_sample_train_metrics)
+    # Use ppo_kl from Miles (Megatron-vs-Megatron) instead of cross-engine KL
+    # Miles computes: KL(π_megatron_old || π_megatron_new) - consistent!
+    # Old approach computed: KL(π_sglang || π_megatron) - cross-engine, inconsistent
+    if miles_metrics:
+        # Map Miles metric names to expected output names
+        if "ppo_kl:sum" in miles_metrics:
+            metrics["optim/ppo_kl"] = miles_metrics["ppo_kl:sum"]
+        if "pg_clipfrac:mean" in miles_metrics:
+            metrics["optim/pg_clipfrac"] = miles_metrics["pg_clipfrac:mean"]
+        if "pg_loss:sum" in miles_metrics:
+            metrics["optim/pg_loss"] = miles_metrics["pg_loss:sum"]
+        if "entropy_loss:sum" in miles_metrics:
+            metrics["optim/entropy_loss"] = miles_metrics["entropy_loss:sum"]
+        if "total_loss:sum" in miles_metrics:
+            metrics["optim/total_loss"] = miles_metrics["total_loss:sum"]
 
     # Get a sampling client using the new weights
     sampling_client, checkpoint_metrics = await save_checkpoint_and_get_sampling_client(
@@ -859,6 +896,7 @@ async def do_train_step_streaming_and_get_sampling_client(
     all_data_D = []
     all_training_logprobs_D = []
     all_wrapped_trajectory_groups = []
+    all_miles_metrics: dict[str, float] = {}  # Aggregate Miles metrics (ppo_kl, etc.)
     for i_substep in range(cfg.num_substeps):
         # Run multiple minibatches per substep
         # Once we have enough trajectories for a minibatch, train on them
@@ -920,6 +958,7 @@ async def do_train_step_streaming_and_get_sampling_client(
             with timed(f"train/fwd_bwd_substep_{i_substep}_mb_{i_mb}_consume", metrics):
                 fwd_bwd_result = await fwd_bwd_future.result_async()
                 all_training_logprobs_D.extend(_training_logprobs_from_fwd_bwd(fwd_bwd_result))
+                _aggregate_metrics(all_miles_metrics, fwd_bwd_result.metrics)
 
         with timed(f"train/optim_substep_{i_substep}_consume", metrics):
             await optim_future.result_async()
@@ -941,6 +980,7 @@ async def do_train_step_streaming_and_get_sampling_client(
         i_batch + 1,
         all_data_D,
         all_training_logprobs_D,
+        all_miles_metrics,  # Pass Miles metrics (ppo_kl, etc.)
         cfg.log_path,
         cfg.save_every,
         cfg.compute_post_kl,
@@ -976,7 +1016,7 @@ async def do_train_step_and_get_sampling_client(
     metrics.update(prepare_minibatch_metrics)
 
     with timed("train", metrics):
-        training_logprobs_D = await train_step(
+        training_logprobs_D, miles_metrics = await train_step(
             data_D,
             training_client,
             cfg.learning_rate,
@@ -990,6 +1030,7 @@ async def do_train_step_and_get_sampling_client(
         i_batch + 1,
         data_D,
         training_logprobs_D,
+        miles_metrics,  # Pass Miles metrics (ppo_kl, etc.)
         cfg.log_path,
         cfg.save_every,
         cfg.compute_post_kl,
