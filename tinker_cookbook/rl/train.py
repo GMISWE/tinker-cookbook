@@ -34,7 +34,6 @@ from tinker_cookbook.rl.data_processing import (
 )
 from tinker_cookbook.rl.metric_util import RLTestSetEvaluator, compute_trajectory_metrics
 from tinker_cookbook.rl.metrics import (
-    compute_kl_sample_train,
     compute_post_kl,
     compute_sampling_client_metrics,
     incorporate_kl_penalty,
@@ -667,6 +666,9 @@ async def do_sync_training_with_stream_minibatch(
         ):
             iter_dir.mkdir(parents=True, exist_ok=True)
             trace.save_gantt_chart_html(window, i_batch, iter_dir / "timing_gantt.html")
+        # Log RLVE per-environment metrics if available
+        if hasattr(dataset, 'rlve_manager'):
+            metrics.update(dataset.rlve_manager.get_metrics())
         ml_logger.log_metrics(metrics, step=i_batch)
 
 
@@ -1001,6 +1003,9 @@ async def do_async_training(
                 if iter_dir is not None:
                     iter_dir.mkdir(parents=True, exist_ok=True)
                     trace.save_gantt_chart_html(window, i_batch, iter_dir / "timing_gantt.html")
+            # Log RLVE per-environment metrics if available
+            if hasattr(dataset, 'rlve_manager'):
+                metrics.update(dataset.rlve_manager.get_metrics())
             ml_logger.log_metrics(metrics, step=i_batch)
             i_batch += 1
             wrapped_trajectory_groups = []
@@ -1124,6 +1129,7 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     i_batch: int,
     data_D: list[tinker.Datum],
     training_logprobs_D: list[torch.Tensor],
+    miles_metrics: dict[str, Any],
     log_path: str,
     save_every: int,
     do_compute_post_kl: bool,
@@ -1136,6 +1142,10 @@ async def compute_full_batch_metrics_and_get_sampling_client(
 
     The reason we return a sampling client is that if do_compute_post_kl is True,
     we need to create a sampling client from the post-update policy.
+
+    Args:
+        miles_metrics: Metrics from Miles (ppo_kl, pg_clipfrac, etc.) - these are
+            Megatron-vs-Megatron metrics, consistent with the training engine.
     """
     metrics = {}
 
