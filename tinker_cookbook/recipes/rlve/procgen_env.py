@@ -134,6 +134,27 @@ class RLVEManager :
 
             self.environment2accuracy[environment] = dict(accuracy = 0, num_samples = 0)
 
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get current RLVE metrics for logging to wandb.
+        Returns accuracy and difficulty for each environment.
+        """
+        log_dict = {}
+        log_dict["rollout/problem_generation_seed"] = self.problem_generation_seed
+
+        for environment in self.args["environment_list"]:
+            # Log current difficulty for each environment
+            log_dict[f"RLVE/{environment}/difficulty"] = self.environment2difficulty[environment]
+
+            # Log current accuracy stats (samples accumulated so far)
+            num_samples = self.environment2accuracy[environment]["num_samples"]
+            if num_samples > 0:
+                accuracy = self.environment2accuracy[environment]["accuracy"] / num_samples
+                log_dict[f"RLVE/{environment}/accuracy"] = accuracy
+                log_dict[f"RLVE/{environment}/num_samples"] = num_samples
+
+        return log_dict
+
 
 
 
