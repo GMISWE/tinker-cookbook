@@ -272,6 +272,10 @@ class Config:
     enable_trace: bool = False
     debug_train_only: bool = False  # GMI: RL needs rollout actors for sampling (Slime-specific)
 
+    # Max batch size for training API (avoids gradient accumulation issues with logprobs)
+    # Should match groups_per_batch * group_size. Default None = auto-detect from dataset_builder.
+    max_batch_size: int | None = None
+
     remove_constant_reward_groups: bool = False
     eval_every: int = 20  # 0 = disabled
     save_every: int = 20  # 0 = disabled
@@ -1088,6 +1092,9 @@ async def do_sync_training(
         # Log metrics
         metrics.update(train_step_metrics)
         metrics["time/total"] = time.time() - t_start
+        # Log RLVE per-environment metrics if available
+        if hasattr(dataset, 'rlve_manager'):
+            metrics.update(dataset.rlve_manager.get_metrics())
         ml_logger.log_metrics(metrics, step=i_batch)
 
 
@@ -1139,8 +1146,24 @@ async def main(
         )
         logger.info(f"Loaded weights from {cfg.load_checkpoint_path}")
     else:
+        # Calculate max_batch_size from dataset_builder if not explicitly set
+        max_batch_size = cfg.max_batch_size
+        if max_batch_size is None:
+            # Try to auto-detect from dataset_builder attributes
+            batch_size = getattr(cfg.dataset_builder, 'batch_size', None)
+            group_size = getattr(cfg.dataset_builder, 'group_size', None)
+            if batch_size is not None and group_size is not None:
+                max_batch_size = batch_size * group_size
+                logger.info(f"Auto-detected max_batch_size={max_batch_size} (batch_size={batch_size} * group_size={group_size})")
+            else:
+                max_batch_size = 4096  # Default fallback
+                logger.warning(f"Could not auto-detect batch size, using default max_batch_size={max_batch_size}")
+
         training_client = await service_client.create_lora_training_client_async(
-            cfg.model_name, rank=cfg.lora_rank, debug_train_only=cfg.debug_train_only
+            cfg.model_name,
+            rank=cfg.lora_rank,
+            debug_train_only=cfg.debug_train_only,
+            max_batch_size=max_batch_size,
         )
 
     # Get tokenizer from training client
