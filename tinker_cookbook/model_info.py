@@ -64,6 +64,11 @@ def get_deepseek_info() -> dict[str, ModelAttributes]:
     return {
         "DeepSeek-V3.1": ModelAttributes(org, "3", "671B-A37B", True),
         "DeepSeek-V3.1-Base": ModelAttributes(org, "3", "671B-A37B", False),
+        # R1 Distill models (based on Qwen architecture, use qwen tokenizer)
+        "DeepSeek-R1-Distill-Qwen-1.5B": ModelAttributes(org, "R1-Distill-Qwen", "1.5B", True),
+        "DeepSeek-R1-Distill-Qwen-7B": ModelAttributes(org, "R1-Distill-Qwen", "7B", True),
+        "DeepSeek-R1-Distill-Qwen-14B": ModelAttributes(org, "R1-Distill-Qwen", "14B", True),
+        "DeepSeek-R1-Distill-Qwen-32B": ModelAttributes(org, "R1-Distill-Qwen", "32B", True),
     }
 
 
@@ -112,6 +117,8 @@ def get_recommended_renderer_names(model_name: str) -> list[str]:
         else:
             raise ValueError(f"Unknown model: {model_name}")
     elif attributes.organization == "deepseek-ai":
+        # All DeepSeek models use the same DeepSeek V3 chat template
+        # (including R1-Distill models which use DeepSeek's own tokenizer, not Qwen's)
         return ["deepseekv3_disable_thinking", "deepseekv3"]
     elif attributes.organization == "openai":
         return ["gpt_oss_no_sysprompt", "gpt_oss_medium_reasoning"]
