@@ -399,6 +399,10 @@ class Config:
     wandb_name: str | None = None
     debug_train_only: bool = False  # GMI: RL needs rollout actors for sampling (Slime-specific)
 
+    # Max batch size for training API (avoids gradient accumulation issues with logprobs)
+    # Should match groups_per_batch * group_size. Default None = auto-detect from dataset_builder.
+    max_batch_size: int | None = None
+
     # -------------------------------------------------------------------------
     # Sampling and diagnostics (advanced)
     # -------------------------------------------------------------------------
@@ -1495,6 +1499,9 @@ async def do_sync_training(
         ):
             iter_dir.mkdir(parents=True, exist_ok=True)
             trace.save_gantt_chart_html(window, i_batch, iter_dir / "timing_gantt.html")
+        # Log RLVE per-environment metrics if available
+        if hasattr(dataset, 'rlve_manager'):
+            metrics.update(dataset.rlve_manager.get_metrics())
         ml_logger.log_metrics(metrics, step=i_batch)
 
 
@@ -1580,9 +1587,25 @@ async def main(
         )
         logger.info(f"Loaded weights from {config.load_checkpoint_path}")
     else:
+        # Calculate max_batch_size from dataset_builder if not explicitly set
+        max_batch_size = config.max_batch_size
+        if max_batch_size is None:
+            # Try to auto-detect from dataset_builder attributes
+            batch_size = getattr(config.dataset_builder, 'batch_size', None)
+            group_size = getattr(config.dataset_builder, 'group_size', None)
+            if batch_size is not None and group_size is not None:
+                max_batch_size = batch_size * group_size
+                logger.info(f"Auto-detected max_batch_size={max_batch_size} (batch_size={batch_size} * group_size={group_size})")
+            else:
+                max_batch_size = 4096  # Default fallback
+                logger.warning(f"Could not auto-detect batch size, using default max_batch_size={max_batch_size}")
+
         training_client = await service_client.create_lora_training_client_async(
-            config.model_name, rank=config.lora_rank, user_metadata=user_metadata,
-            debug_train_only=config.debug_train_only
+            config.model_name,
+            rank=config.lora_rank,
+            user_metadata=user_metadata,
+            debug_train_only=config.debug_train_only,
+            max_batch_size=max_batch_size,
         )
 
     # Get tokenizer from training client
@@ -1609,7 +1632,7 @@ async def main(
         # Construct the dataset state path from the checkpoint name
         checkpoint_name = resume_info.get("name", f"{resume_info['batch']:06d}")
         dataset_state_path = os.path.join(
-            cfg.log_path, f"rlve_manager_{checkpoint_name}.json"
+            config.log_path, f"rlve_manager_{checkpoint_name}.json"
         )
         if os.path.exists(dataset_state_path):
             dataset.load_state(dataset_state_path)
