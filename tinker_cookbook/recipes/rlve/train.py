@@ -37,6 +37,7 @@ class CLIConfig:
     kl_penalty_coef: float = 0.0
 
     # RLVE configuration
+    environment_list: str | None = None  # Comma-separated list of environments (default: all 400)
     reward_key: str = "accuracy"
     initial_difficulty: int = 0
     difficulty_sliding_window_size: int = 4
@@ -48,9 +49,14 @@ class CLIConfig:
 
     def get_procgen_config(self):
         """Generate procgen config with actual CLI values."""
+        # Use specified environments or default to all
+        if self.environment_list:
+            envs = [e.strip() for e in self.environment_list.split(",")]
+        else:
+            envs = list(identifier2controller.keys())
         return {
             "reward_key": self.reward_key,
-            "environment_list": list(identifier2controller.keys()),
+            "environment_list": envs,
             "initial_difficulty": self.initial_difficulty,
             "difficulty_sliding_window_size": self.difficulty_sliding_window_size,
             "min_prompts_before_difficulty_check": self.min_prompts_before_difficulty_check,
