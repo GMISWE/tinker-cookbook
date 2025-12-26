@@ -101,6 +101,11 @@ def get_deepseek_info() -> dict[str, ModelAttributes]:
     return {
         "DeepSeek-V3.1": ModelAttributes(org, "3", "671B-A37B", True, _DEEPSEEKV3),
         "DeepSeek-V3.1-Base": ModelAttributes(org, "3", "671B-A37B", False, _ROLE_COLON),
+        # R1 Distill models (based on Qwen architecture, use DeepSeek's own chat template)
+        "DeepSeek-R1-Distill-Qwen-1.5B": ModelAttributes(org, "R1-Distill-Qwen", "1.5B", True, _DEEPSEEKV3),
+        "DeepSeek-R1-Distill-Qwen-7B": ModelAttributes(org, "R1-Distill-Qwen", "7B", True, _DEEPSEEKV3),
+        "DeepSeek-R1-Distill-Qwen-14B": ModelAttributes(org, "R1-Distill-Qwen", "14B", True, _DEEPSEEKV3),
+        "DeepSeek-R1-Distill-Qwen-32B": ModelAttributes(org, "R1-Distill-Qwen", "32B", True, _DEEPSEEKV3),
     }
 
 
