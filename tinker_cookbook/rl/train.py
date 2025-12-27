@@ -8,7 +8,7 @@ import logging
 import os
 import time
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator, List, Sequence
+from typing import Any, Callable, Iterator, List, Literal, Sequence
 
 import chz
 import numpy as np
@@ -80,7 +80,14 @@ def _select_representative_inds(scores: list[float], num_inds: int) -> list[int]
 
 
 @scope
-def print_group(traj_group: TrajectoryGroup, tokenizer: Tokenizer):
+def print_group(
+    traj_group: TrajectoryGroup,
+    tokenizer: Tokenizer,
+    advantage_estimator: Literal["center", "grpo"] = "center",
+    advantage_eps: float = 1e-6,
+    grpo_reward_center: bool = True,
+    grpo_std_normalization: bool = True,
+):
     """
     Print a subset of the trajectory group to the console.
     """
@@ -95,7 +102,13 @@ def print_group(traj_group: TrajectoryGroup, tokenizer: Tokenizer):
         )
 
     rewards = traj_group.get_total_rewards()
-    advantages_G = compute_advantages([traj_group])
+    advantages_G = compute_advantages(
+        [traj_group],
+        estimator=advantage_estimator,
+        eps=advantage_eps,
+        grpo_reward_center=grpo_reward_center,
+        grpo_std_normalization=grpo_std_normalization,
+    )
     data_D, metadata_D = assemble_training_data([traj_group], advantages_G)
 
     buf = io.StringIO()
@@ -259,6 +272,11 @@ class Config:
 
     # Loss function to use for training: "importance_sampling" or "ppo"
     loss_fn: LossFnType = "importance_sampling"
+    # Advantage estimator: "center" (default) or "grpo" (z-score within group)
+    advantage_estimator: Literal["center", "grpo"] = "center"
+    grpo_adv_eps: float = 1e-6
+    grpo_reward_center: bool = True
+    grpo_std_normalization: bool = True
 
     # Number of optimizer steps per training iteration.
     # Useful for very large batch sizes.
@@ -752,6 +770,10 @@ async def prepare_minibatch(
     model_name: str,
     kl_penalty_coef: float,
     kl_discount_factor: float,
+    advantage_estimator: Literal["center", "grpo"],
+    advantage_eps: float,
+    grpo_reward_center: bool,
+    grpo_std_normalization: bool,
 ) -> tuple[list[tinker.Datum], dict[str, Any]]:
     """Converts the trajectories into a minibatch, and provides metrics about the minibatch"""
 
@@ -760,13 +782,39 @@ async def prepare_minibatch(
     taglist_P = [env_group_builder.logging_tags() for env_group_builder in env_group_builders_P]
     metrics.update(compute_trajectory_metrics(trajectory_groups_P, taglist_P))
 
+    if advantage_estimator == "grpo" and grpo_std_normalization:
+        max_group_size = max(len(group.trajectories_G) for group in trajectory_groups_P)
+        if max_group_size <= 1:
+            grpo_std_normalization = False
+            metrics["adv/grpo_std_normalization"] = 0.0
+    if advantage_estimator == "grpo" and grpo_std_normalization:
+        metrics["adv/grpo_std_normalization"] = 1.0
+
     # Print up to two trajectory groups
     for traj_group in trajectory_groups_P[:2]:
-        print_group(traj_group, tokenizer)
+        print_group(
+            traj_group,
+            tokenizer,
+            advantage_estimator=advantage_estimator,
+            advantage_eps=advantage_eps,
+            grpo_reward_center=grpo_reward_center,
+            grpo_std_normalization=grpo_std_normalization,
+        )
 
     # Assemble training data
     with timed("assemble_training_data", metrics):
-        advantages_P = compute_advantages(trajectory_groups_P)
+        advantages_P = compute_advantages(
+            trajectory_groups_P,
+            estimator=advantage_estimator,
+            eps=advantage_eps,
+            grpo_reward_center=grpo_reward_center,
+            grpo_std_normalization=grpo_std_normalization,
+        )
+        non_empty_advantages = [advantages for advantages in advantages_P if advantages.numel() > 0]
+        if non_empty_advantages:
+            flat_advantages = torch.cat(non_empty_advantages, dim=0)
+            metrics["adv/mean"] = float(flat_advantages.mean())
+            metrics["adv/std"] = float(flat_advantages.std(unbiased=False))
         data_D, _metadata_D = assemble_training_data(trajectory_groups_P, advantages_P)
 
     # Incorporate KL penalty if configured
@@ -905,6 +953,10 @@ async def do_train_step_streaming_and_get_sampling_client(
                 model_name=cfg.model_name,
                 kl_penalty_coef=cfg.kl_penalty_coef,
                 kl_discount_factor=cfg.kl_discount_factor,
+                advantage_estimator=cfg.advantage_estimator,
+                advantage_eps=cfg.grpo_adv_eps,
+                grpo_reward_center=cfg.grpo_reward_center,
+                grpo_std_normalization=cfg.grpo_std_normalization,
             )
             metrics.update(prepare_minibatch_metrics)
 
@@ -981,6 +1033,10 @@ async def do_train_step_and_get_sampling_client(
         model_name=cfg.model_name,
         kl_penalty_coef=cfg.kl_penalty_coef,
         kl_discount_factor=cfg.kl_discount_factor,
+        advantage_estimator=cfg.advantage_estimator,
+        advantage_eps=cfg.grpo_adv_eps,
+        grpo_reward_center=cfg.grpo_reward_center,
+        grpo_std_normalization=cfg.grpo_std_normalization,
     )
     metrics.update(prepare_minibatch_metrics)
 
