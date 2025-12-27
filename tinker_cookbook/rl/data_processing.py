@@ -6,6 +6,7 @@ and assembling training batches.
 """
 
 import logging
+from typing import List, Literal
 
 import tinker
 import torch
@@ -20,14 +21,32 @@ from tinker_cookbook.utils.misc_utils import all_same, safezip
 logger = logging.getLogger(__name__)
 
 
-def compute_advantages(trajectory_groups_P: list[TrajectoryGroup]) -> list[torch.Tensor]:
+AdvantageEstimator = Literal["center", "grpo"]
+
+
+def compute_advantages(
+    trajectory_groups_P: List[TrajectoryGroup],
+    estimator: AdvantageEstimator = "center",
+    eps: float = 1e-6,
+    grpo_reward_center: bool = True,
+    grpo_std_normalization: bool = True,
+) -> List[torch.Tensor]:
     """Compute advantages for each trajectory, centered within groups."""
     advantages_P: list[torch.Tensor] = []
 
     for traj_group in trajectory_groups_P:
-        rewards_G = torch.tensor(traj_group.get_total_rewards())
-        # Center advantages within the group
-        advantages_G = rewards_G - rewards_G.mean()
+        rewards_G = torch.tensor(traj_group.get_total_rewards(), dtype=torch.float32)
+        if estimator == "center":
+            advantages_G = rewards_G - rewards_G.mean()
+        elif estimator == "grpo":
+            if grpo_reward_center:
+                rewards_G = rewards_G - rewards_G.mean()
+            if grpo_std_normalization:
+                denom = rewards_G.std(unbiased=False).clamp_min(eps)
+                rewards_G = rewards_G / denom
+            advantages_G = rewards_G
+        else:
+            raise ValueError(f"Unknown advantage estimator: {estimator}")
         advantages_P.append(advantages_G)
 
     return advantages_P
