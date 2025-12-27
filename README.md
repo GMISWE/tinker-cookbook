@@ -85,6 +85,21 @@ If you find errors or want to improve the documentation, feel free to submit a P
 
 For the rendered documentation, visit [tinker-docs.thinkingmachines.ai](https://tinker-docs.thinkingmachines.ai).
 
+### GRPO (opt-in)
+
+Tinker Cookbook supports GRPO-style reward normalization in RL training. It is opt-in and matches the core behavior used in miles: group reward centering plus optional standard deviation normalization. To enable GRPO in a recipe, set:
+
+```bash
+python -m tinker_cookbook.recipes.rl_basic \
+  advantage_estimator=grpo \
+  grpo_reward_center=True \
+  grpo_std_normalization=True
+```
+
+Notes:
+- GRPO normalization is disabled automatically when the group size is 1.
+- You can disable centering or std normalization explicitly via `grpo_reward_center=False` or `grpo_std_normalization=False`.
+
 ### Import our utilities
 
 Tinker cookbook includes several utilities. Here's a quick overview:

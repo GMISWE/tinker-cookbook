@@ -50,6 +50,19 @@ python -m tinker_cookbook.recipes.rlve.train model_name="Qwen/Qwen3-4B-Instruct-
 
 These arguments are aligned with those defined [here](https://github.com/Zhiyuan-Zeng/RLVE/blob/main/slime/utils/arguments.py#L845-#L899).
 
+**GRPO (default in RLVE):**
+- `advantage_estimator`: Defaults to `grpo` for RLVE.
+- `grpo_reward_center`: Enables group reward centering (default: True).
+- `grpo_std_normalization`: Enables group std normalization (default: True; auto-disabled when group size is 1).
+
+Example:
+```bash
+python -m tinker_cookbook.recipes.rlve.train \
+  advantage_estimator=grpo \
+  grpo_reward_center=True \
+  grpo_std_normalization=True
+```
+
 ### Difference from the Implementation Using Slime
 
 In this RLVE implementation based on Tinker, we made a minor modification compared to the main implementation using slime (used in our paper's original experiments) to avoid altering the primary training loop.
