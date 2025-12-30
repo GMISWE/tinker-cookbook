@@ -211,6 +211,12 @@ async def train_step(
         are summed/averaged across substeps from Miles.
     """
     batches_md = split_list(data_D, min(num_substeps, len(data_D)))
+
+    # Handle empty batch - skip training step to avoid Miles assertion error
+    if len(batches_md) == 0 or all(len(b) == 0 for b in batches_md):
+        logger.warning("Empty batch in train_step - skipping training step")
+        return [], {"train/skipped_empty_batch": 1}
+
     training_logprobs_D: list[torch.Tensor] = []
     aggregated_metrics: dict[str, float] = {}
 
