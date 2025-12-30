@@ -464,6 +464,9 @@ class Config:
     # Maximum number of training iterations. If None, train on the full dataset.
     max_steps: int | None = None
 
+    # GMI-specific: RLVE configuration for GRPO native options (use-tis, balance-data, etc.)
+    rlve_config: Any | None = None
+
 
 @trace.scope
 async def run_single_evaluation(
@@ -1284,8 +1287,14 @@ async def do_train_step_streaming_and_get_sampling_client(
             # To have the same results as the sync implementation, we will
             # remove these and train on a smaller batch.
             wrapped_trajectory_groups = [g for g in wrapped_trajectory_groups if g is not None]
+            # Skip minibatch if all groups were filtered (zero variance rewards)
             if len(wrapped_trajectory_groups) == 0:
+                logger.warning(
+                    f"[stream_minibatch] Step {i_batch}, Substep {i_substep}, Minibatch {i_minibatch}: "
+                    "All groups filtered (zero variance). Skipping minibatch."
+                )
                 i_minibatch += 1
+                wrapped_trajectory_groups = []
                 continue
 
             data_D, prepare_minibatch_metrics = await prepare_minibatch(
@@ -1662,6 +1671,7 @@ async def main(
             user_metadata=user_metadata,
             debug_train_only=config.debug_train_only,
             max_batch_size=max_batch_size,
+            rlve_config=cfg.rlve_config,
         )
 
     # Get tokenizer from training client
