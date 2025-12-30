@@ -218,8 +218,11 @@ async def train_step(
         are summed/averaged across substeps from Miles.
     """
     batches = split_list(data_D, min(num_substeps, len(data_D)))
-    if not batches:
-        return [], {}
+
+    # Handle empty batch - skip training step to avoid Miles assertion error
+    if len(batches) == 0 or all(len(b) == 0 for b in batches):
+        logger.warning("Empty batch in train_step - skipping training step")
+        return [], {"train/skipped_empty_batch": 1}
 
     adam_params = tinker.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     training_logprobs_D: list[torch.Tensor] = []
