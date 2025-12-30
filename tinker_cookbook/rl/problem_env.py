@@ -98,5 +98,13 @@ class ProblemGroupBuilder(EnvGroupBuilder):
     ) -> list[tuple[float, Metrics]]:
         return [(0.0, {}) for _ in range(len(trajectory_group))]
 
+    def get_prompt_id(self) -> str:
+        """Return a stable identifier for this prompt."""
+        env = self.env_thunk()
+        question = env.get_question()
+        import hashlib
+
+        return hashlib.md5(question.encode()).hexdigest()
+
     def logging_tags(self) -> list[str]:
         return [self.dataset_name]

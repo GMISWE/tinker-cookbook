@@ -32,6 +32,8 @@ from tinker_cookbook.rl.metrics import (
 )
 # Note: compute_kl_sample_train removed - now using ppo_kl from Miles (Megatron-vs-Megatron)
 from tinker_cookbook.rl.rollouts import do_group_rollout
+from tinker_cookbook.rl.adaptive_sampling import AdaptiveSamplingConfig
+from tinker_cookbook.rl.reward_history import RewardHistory
 from tinker_cookbook.rl.types import (
     EnvGroupBuilder,
     RLDataset,
@@ -277,6 +279,7 @@ class Config:
     grpo_adv_eps: float = 1e-6
     grpo_reward_center: bool = True
     grpo_std_normalization: bool = True
+    global_stat_est: bool = False
 
     # Number of optimizer steps per training iteration.
     # Useful for very large batch sizes.
@@ -307,6 +310,9 @@ class Config:
 
     # GMI-specific: RLVE configuration for GRPO native options (use-tis, balance-data, etc.)
     rlve_config: Any | None = None
+
+    # Adaptive Sampling Configuration
+    adaptive_sampling: AdaptiveSamplingConfig | None = None
 
 
 @scope
@@ -364,6 +370,7 @@ async def do_sync_training_with_stream_minibatch(
     dataset: RLDataset,
     ml_logger: ml_log.Logger,
     tokenizer: Tokenizer,
+    reward_history: RewardHistory | None = None,
 ):
     """
     Implements fully synchronous on-policy training with minibatch streaming.
@@ -373,8 +380,25 @@ async def do_sync_training_with_stream_minibatch(
     """
     # Initial sampling client
     sampling_client, _ = await save_checkpoint_and_get_sampling_client(
-        training_client, start_batch, cfg.log_path, cfg.save_every, start_batch, dataset=dataset
+        training_client,
+        start_batch,
+        cfg.log_path,
+        cfg.save_every,
+        start_batch,
+        dataset=dataset,
+        reward_history=reward_history,
     )
+
+    adaptive_sampler = None
+    if cfg.adaptive_sampling and cfg.adaptive_sampling.enabled:
+        from tinker_cookbook.rl.adaptive_sampling import AdaptiveSampler
+
+        adaptive_sampler = AdaptiveSampler(
+            config=cfg.adaptive_sampling,
+            sampling_client=sampling_client,
+            max_tokens=cfg.max_tokens,
+            temperature=cfg.temperature,
+        )
 
     for i_batch in range(start_batch, end_batch):
         metrics = {
@@ -409,14 +433,24 @@ async def do_sync_training_with_stream_minibatch(
             ) -> None:
                 metrics = {}
                 t_start = time.time()
-                trajectory_group = await do_group_rollout_and_filter_constant_reward(
-                    sampling_client,
-                    builder,
-                    max_tokens=cfg.max_tokens,
-                    temperature=cfg.temperature,
-                    do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
-                    enable_logging=enable_logging,
-                )
+                if adaptive_sampler:
+                    trajectory_groups, adaptive_metrics = (
+                        await adaptive_sampler.multi_round_adaptive_downsampling(
+                            [builder],
+                            reward_history=reward_history,
+                        )
+                    )
+                    metrics.update(adaptive_metrics)
+                    trajectory_group = trajectory_groups[0] if trajectory_groups else None
+                else:
+                    trajectory_group = await do_group_rollout_and_filter_constant_reward(
+                        sampling_client,
+                        builder,
+                        max_tokens=cfg.max_tokens,
+                        temperature=cfg.temperature,
+                        do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
+                        enable_logging=enable_logging,
+                    )
                 metrics["time/trajectory_group_worker_loop/total"] = time.time() - t_start
                 if trajectory_group is not None:
                     trajectory_groups_queue.put_nowait(
@@ -450,6 +484,7 @@ async def do_sync_training_with_stream_minibatch(
                 service_client,
                 tokenizer,
                 dataset=dataset,
+                reward_history=reward_history,
             )
 
         # Log metrics
@@ -459,6 +494,12 @@ async def do_sync_training_with_stream_minibatch(
         if hasattr(dataset, 'rlve_manager'):
             metrics.update(dataset.rlve_manager.get_metrics())
         ml_logger.log_metrics(metrics, step=i_batch)
+
+        if adaptive_sampler:
+            adaptive_sampler.sampling_client = sampling_client
+            adaptive_sampler.policy = TinkerTokenCompleter(
+                sampling_client, max_tokens=cfg.max_tokens, temperature=cfg.temperature
+            )
 
 
 @chz.chz
@@ -490,6 +531,7 @@ async def do_async_training(
     dataset: RLDataset,
     ml_logger: ml_log.Logger,
     tokenizer: Tokenizer,
+    reward_history: RewardHistory | None = None,
 ):
     """Implements async off-policy training, capped at K steps off policy."""
     assert cfg.async_config is not None
@@ -503,19 +545,29 @@ async def do_async_training(
     trajectory_groups_queue = asyncio.Queue[WrappedTrajectoryGroup | None]()
 
     # Initial sampling client to use
-    path_dict = await checkpoint_utils.save_checkpoint_async(
-        training_client=training_client,
-        name=f"{start_batch:06d}",
-        log_path=cfg.log_path,
-        loop_state={"batch": start_batch},
-        kind="both",
+    sampling_client, _ = await save_checkpoint_and_get_sampling_client(
+        training_client,
+        start_batch,
+        cfg.log_path,
+        cfg.save_every,
+        start_batch,
+        dataset=dataset,
+        reward_history=reward_history,
     )
-
-    # This will be updated by the training loop
-    sampling_client = training_client.create_sampling_client(path_dict["sampler_path"])
     sampling_client_step = start_batch
     sampling_client_updated_event = asyncio.Event()
     sampling_client_updated_event.set()
+
+    adaptive_sampler = None
+    if cfg.adaptive_sampling and cfg.adaptive_sampling.enabled:
+        from tinker_cookbook.rl.adaptive_sampling import AdaptiveSampler
+
+        adaptive_sampler = AdaptiveSampler(
+            config=cfg.adaptive_sampling,
+            sampling_client=sampling_client,
+            max_tokens=cfg.max_tokens,
+            temperature=cfg.temperature,
+        )
 
     @scope
     def shutdown_loops():
@@ -549,13 +601,24 @@ async def do_async_training(
             # Save a reference to the sampling client step in case it changes
             # while we're running the rollout
             sampling_client_step_copy = sampling_client_step
-            trajectory_group = await do_group_rollout_and_filter_constant_reward(
-                sampling_client,
-                env_group_builder,
-                max_tokens=cfg.max_tokens,
-                temperature=cfg.temperature,
-                do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
-            )
+
+            if adaptive_sampler:
+                trajectory_groups, adaptive_metrics = (
+                    await adaptive_sampler.multi_round_adaptive_downsampling(
+                        [env_group_builder],
+                        reward_history=reward_history,
+                    )
+                )
+                metrics.update(adaptive_metrics)
+                trajectory_group = trajectory_groups[0] if trajectory_groups else None
+            else:
+                trajectory_group = await do_group_rollout_and_filter_constant_reward(
+                    sampling_client,
+                    env_group_builder,
+                    max_tokens=cfg.max_tokens,
+                    temperature=cfg.temperature,
+                    do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
+                )
             if trajectory_group is None:
                 trajectory_groups_queue.put_nowait(None)
             else:
@@ -629,6 +692,7 @@ async def do_async_training(
                     tokenizer,
                     filter_stale_trajectory_group,
                     dataset,
+                    reward_history=reward_history,
                 )
             else:
                 if not filter_stale_trajectory_group(wrapped_trajectory_group):
@@ -648,6 +712,25 @@ async def do_async_training(
                 # different sampler versions
                 metrics.update(compute_sampling_client_metrics(wrapped_trajectory_groups))
 
+                adaptive_enabled_values = []
+                first_round_reward_values = []
+                for wrapped_traj in wrapped_trajectory_groups:
+                    if "adaptive_sampling/enabled" in wrapped_traj.metrics:
+                        adaptive_enabled_values.append(
+                            wrapped_traj.metrics["adaptive_sampling/enabled"]
+                        )
+                    if "adaptive_sampling/first_round_reward" in wrapped_traj.metrics:
+                        first_round_reward_values.append(
+                            wrapped_traj.metrics["adaptive_sampling/first_round_reward"]
+                        )
+
+                if adaptive_enabled_values:
+                    metrics["adaptive_sampling/enabled"] = all(adaptive_enabled_values)
+                if first_round_reward_values:
+                    metrics["adaptive_sampling/real_reward"] = float(
+                        np.mean(first_round_reward_values)
+                    )
+
                 # TODO: For proper checkpointing, we also need to save dataloader state and
                 # all queued trajectory groups that haven't been trained on yet
                 sampling_client, train_step_metrics = await do_train_step_and_get_sampling_client(
@@ -659,9 +742,16 @@ async def do_async_training(
                     [g.env_group_builder for g in wrapped_trajectory_groups],
                     [g.trajectory_group for g in wrapped_trajectory_groups],
                     dataset,
+                    reward_history=reward_history,
                 )
             sampling_client_step = i_batch + 1
             sampling_client_updated_event.set()
+
+            if adaptive_sampler:
+                adaptive_sampler.sampling_client = sampling_client
+                adaptive_sampler.policy = TinkerTokenCompleter(
+                    sampling_client, max_tokens=cfg.max_tokens, temperature=cfg.temperature
+                )
 
             # Log metrics
             metrics.update(train_step_metrics)
@@ -768,6 +858,7 @@ async def save_checkpoint_and_get_sampling_client(
     save_every: int,
     start_batch: int = 0,
     dataset: RLDataset | None = None,
+    reward_history: RewardHistory | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     metrics = {}
     with timed("save_checkpoint", metrics):
@@ -784,6 +875,17 @@ async def save_checkpoint_and_get_sampling_client(
                 loop_state={"batch": i_batch},
                 kind="both",
             )
+            if reward_history is not None:
+                reward_history_path = os.path.join(
+                    log_path, f"reward_history_{i_batch:06d}.json"
+                )
+                reward_history.save(reward_history_path)
+
+                latest_path = os.path.join(log_path, "reward_history_latest.json")
+                reward_history.save(latest_path)
+
+                stats = reward_history.get_stats()
+                metrics.update({f"reward_history/{k}": v for k, v in stats.items()})
             return training_client.create_sampling_client(path_dict["sampler_path"]), metrics
         else:
             return await training_client.save_weights_and_get_sampling_client_async(), metrics
@@ -802,6 +904,8 @@ async def prepare_minibatch(
     advantage_eps: float,
     grpo_reward_center: bool,
     grpo_std_normalization: bool,
+    use_global_stats: bool,
+    reward_history: RewardHistory | None = None,
 ) -> tuple[list[tinker.Datum], dict[str, Any]]:
     """Converts the trajectories into a minibatch, and provides metrics about the minibatch"""
 
@@ -837,6 +941,9 @@ async def prepare_minibatch(
             eps=advantage_eps,
             grpo_reward_center=grpo_reward_center,
             grpo_std_normalization=grpo_std_normalization,
+            use_global_stats=use_global_stats,
+            env_group_builders_P=list(env_group_builders_P),
+            reward_history=reward_history,
         )
         non_empty_advantages = [advantages for advantages in advantages_P if advantages.numel() > 0]
         if non_empty_advantages:
@@ -871,6 +978,7 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     save_every: int,
     do_compute_post_kl: bool,
     dataset: RLDataset | None = None,
+    reward_history: RewardHistory | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     """
     At the end of the iteration, this will compute metrics for the full batch
@@ -903,7 +1011,12 @@ async def compute_full_batch_metrics_and_get_sampling_client(
 
     # Get a sampling client using the new weights
     sampling_client, checkpoint_metrics = await save_checkpoint_and_get_sampling_client(
-        training_client, i_batch, log_path, save_every, dataset=dataset
+        training_client,
+        i_batch,
+        log_path,
+        save_every,
+        dataset=dataset,
+        reward_history=reward_history,
     )
     metrics.update(checkpoint_metrics)
 
@@ -926,6 +1039,7 @@ async def do_train_step_streaming_and_get_sampling_client(
     tokenizer: Tokenizer,
     trajectory_group_filter: Callable[[WrappedTrajectoryGroup | None], bool] = lambda _: True,
     dataset: RLDataset | None = None,
+    reward_history: RewardHistory | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     """
     As soon as we have enough trajectories for a minibatch, we will train on them.
@@ -996,6 +1110,8 @@ async def do_train_step_streaming_and_get_sampling_client(
                 advantage_eps=cfg.grpo_adv_eps,
                 grpo_reward_center=cfg.grpo_reward_center,
                 grpo_std_normalization=cfg.grpo_std_normalization,
+                use_global_stats=cfg.global_stat_est,
+                reward_history=reward_history,
             )
             metrics.update(prepare_minibatch_metrics)
 
@@ -1031,6 +1147,21 @@ async def do_train_step_streaming_and_get_sampling_client(
             [g.env_group_builder.logging_tags() for g in all_wrapped_trajectory_groups],
         )
     )
+
+    adaptive_enabled_values = []
+    first_round_reward_values = []
+    for wrapped_traj in all_wrapped_trajectory_groups:
+        if "adaptive_sampling/enabled" in wrapped_traj.metrics:
+            adaptive_enabled_values.append(wrapped_traj.metrics["adaptive_sampling/enabled"])
+        if "adaptive_sampling/first_round_reward" in wrapped_traj.metrics:
+            first_round_reward_values.append(
+                wrapped_traj.metrics["adaptive_sampling/first_round_reward"]
+            )
+
+    if adaptive_enabled_values:
+        metrics["adaptive_sampling/enabled"] = all(adaptive_enabled_values)
+    if first_round_reward_values:
+        metrics["adaptive_sampling/real_reward"] = float(np.mean(first_round_reward_values))
     (
         sampling_client,
         full_batch_metrics,
@@ -1045,6 +1176,7 @@ async def do_train_step_streaming_and_get_sampling_client(
         cfg.save_every,
         cfg.compute_post_kl,
         dataset,
+        reward_history=reward_history,
     )
     metrics.update(full_batch_metrics)
     return sampling_client, metrics
@@ -1060,6 +1192,7 @@ async def do_train_step_and_get_sampling_client(
     env_group_builders_P: Sequence[EnvGroupBuilder],
     trajectory_groups_P: list[TrajectoryGroup],
     dataset: RLDataset | None = None,
+    reward_history: RewardHistory | None = None,
 ) -> tuple[tinker.SamplingClient, dict[str, Any]]:
     update_scope_context({"step": i_batch})
 
@@ -1076,6 +1209,8 @@ async def do_train_step_and_get_sampling_client(
         advantage_eps=cfg.grpo_adv_eps,
         grpo_reward_center=cfg.grpo_reward_center,
         grpo_std_normalization=cfg.grpo_std_normalization,
+        use_global_stats=cfg.global_stat_est,
+        reward_history=reward_history,
     )
     metrics.update(prepare_minibatch_metrics)
 
@@ -1099,6 +1234,7 @@ async def do_train_step_and_get_sampling_client(
         cfg.save_every,
         cfg.compute_post_kl,
         dataset=dataset,
+        reward_history=reward_history,
     )
     metrics.update(full_batch_metrics)
 
@@ -1117,12 +1253,30 @@ async def do_sync_training(
     dataset: RLDataset,
     ml_logger: ml_log.Logger,
     tokenizer: Tokenizer,
+    reward_history: RewardHistory | None = None,
 ):
     """Implements fully synchronous on-policy training"""
     # Initial sampling client
     sampling_client, _ = await save_checkpoint_and_get_sampling_client(
-        training_client, start_batch, cfg.log_path, cfg.save_every, start_batch, dataset=dataset
+        training_client,
+        start_batch,
+        cfg.log_path,
+        cfg.save_every,
+        start_batch,
+        dataset=dataset,
+        reward_history=reward_history,
     )
+
+    adaptive_sampler = None
+    if cfg.adaptive_sampling and cfg.adaptive_sampling.enabled:
+        from tinker_cookbook.rl.adaptive_sampling import AdaptiveSampler
+
+        adaptive_sampler = AdaptiveSampler(
+            config=cfg.adaptive_sampling,
+            sampling_client=sampling_client,
+            max_tokens=cfg.max_tokens,
+            temperature=cfg.temperature,
+        )
 
     for i_batch in range(start_batch, end_batch):
         metrics = {
@@ -1150,27 +1304,36 @@ async def do_sync_training(
             f_name=f"train_iteration_{i_batch:06d}",
             scope_name=f"RL Iteration {i_batch}",
         ):
-            trajectory_groups_P = await asyncio.gather(
-                *[
-                    asyncio.create_task(
-                        do_group_rollout_and_filter_constant_reward(
-                            sampling_client,
-                            builder,
-                            max_tokens=cfg.max_tokens,
-                            temperature=cfg.temperature,
-                            do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
-                            enable_logging=i < cfg.num_groups_to_log,
-                        ),
-                        name=f"sample_task_{i}",
+            if adaptive_sampler:
+                trajectory_groups_P, adaptive_metrics = (
+                    await adaptive_sampler.multi_round_adaptive_downsampling(
+                        list(env_group_builders_P),
+                        reward_history=reward_history,
                     )
-                    for i, builder in enumerate(env_group_builders_P)
-                ],
-            )
-        trajectory_groups_P = [
-            trajectory_group
-            for trajectory_group in trajectory_groups_P
-            if trajectory_group is not None
-        ]
+                )
+                metrics.update(adaptive_metrics)
+            else:
+                trajectory_groups_P = await asyncio.gather(
+                    *[
+                        asyncio.create_task(
+                            do_group_rollout_and_filter_constant_reward(
+                                sampling_client,
+                                builder,
+                                max_tokens=cfg.max_tokens,
+                                temperature=cfg.temperature,
+                                do_remove_constant_reward_groups=cfg.remove_constant_reward_groups,
+                                enable_logging=i < cfg.num_groups_to_log,
+                            ),
+                            name=f"sample_task_{i}",
+                        )
+                        for i, builder in enumerate(env_group_builders_P)
+                    ],
+                )
+                trajectory_groups_P = [
+                    trajectory_group
+                    for trajectory_group in trajectory_groups_P
+                    if trajectory_group is not None
+                ]
 
         # Skip training step if all groups were filtered (zero variance rewards)
         if len(trajectory_groups_P) == 0:
@@ -1192,6 +1355,13 @@ async def do_sync_training(
                 env_group_builders_P,
                 trajectory_groups_P,
                 dataset=dataset,
+                reward_history=reward_history,
+            )
+
+        if adaptive_sampler:
+            adaptive_sampler.sampling_client = sampling_client
+            adaptive_sampler.policy = TinkerTokenCompleter(
+                sampling_client, max_tokens=cfg.max_tokens, temperature=cfg.temperature
             )
 
         # Log metrics
@@ -1281,6 +1451,23 @@ async def main(
     if maybe_test_dataset is not None:
         evaluators.append(RLTestSetEvaluator(maybe_test_dataset, max_tokens=cfg.max_tokens))
 
+    reward_history = None
+    if cfg.global_stat_est:
+        reward_history = RewardHistory()
+        logger.info("Using global statistics estimation for advantages")
+        if resume_info:
+            reward_history_path = os.path.join(
+                cfg.log_path, f"reward_history_{start_batch:06d}.json"
+            )
+            if os.path.exists(reward_history_path):
+                reward_history.load(reward_history_path)
+            else:
+                latest_path = os.path.join(cfg.log_path, "reward_history_latest.json")
+                if os.path.exists(latest_path):
+                    reward_history.load(latest_path)
+                else:
+                    logger.warning("No reward history found, starting fresh")
+
     # Load dataset state if resuming from checkpoint
     if resume_info and hasattr(dataset, "load_state"):
         # Construct the dataset state path from the checkpoint name
@@ -1317,6 +1504,7 @@ async def main(
         dataset=dataset,
         ml_logger=ml_logger,
         tokenizer=tokenizer,
+        reward_history=reward_history,
     )
 
     # Save final checkpoint
@@ -1328,6 +1516,9 @@ async def main(
             kind="both",
             loop_state={"batch": num_batches},
         )
+        if reward_history is not None:
+            final_reward_history_path = os.path.join(cfg.log_path, "reward_history_final.json")
+            reward_history.save(final_reward_history_path)
     else:
         logger.info("Training was already complete; nothing to do")
 
