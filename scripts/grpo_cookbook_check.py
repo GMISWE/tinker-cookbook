@@ -35,8 +35,9 @@ def main() -> None:
         grpo_std_normalization=True,
     )
     got = torch.cat(advantages)
-    expected = torch.tensor([-1.0, 1.0, -1.0, 1.0])
-    assert torch.allclose(got, expected, atol=1e-6), (got, expected)
+    # With unbiased=True std (N-1 divisor), 2-sample groups give 1/sqrt(2) ≈ 0.7071
+    expected = torch.tensor([-0.7071067811865476, 0.7071067811865476, -0.7071067811865476, 0.7071067811865476])
+    assert torch.allclose(got, expected, atol=1e-5), (got, expected)
     print("OK", got.tolist())
 
 

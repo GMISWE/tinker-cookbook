@@ -41,7 +41,7 @@ def compute_advantages(
             if grpo_reward_center:
                 rewards_G = rewards_G - rewards_G.mean()
             if grpo_std_normalization:
-                denom = rewards_G.std(unbiased=False).clamp_min(eps)
+                denom = rewards_G.std().clamp_min(eps)
                 rewards_G = rewards_G / denom
             advantages_G = rewards_G
         else:

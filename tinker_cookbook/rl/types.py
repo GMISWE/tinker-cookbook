@@ -125,6 +125,18 @@ class EnvGroupBuilder(ABC):
         """
         return []
 
+    def clone(self) -> "EnvGroupBuilder":
+        """
+        Create a new builder with the same configuration but that will generate fresh
+        environments/problems. Used for resampling when a group is filtered out.
+
+        Subclasses should override this if they support resampling.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support clone(). "
+            "Override this method to enable resampling."
+        )
+
 
 @dataclass
 class TrajectoryGroup:

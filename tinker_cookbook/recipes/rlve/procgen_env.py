@@ -260,6 +260,17 @@ class ProcgenEnvGroupBuilder(EnvGroupBuilder):
 
     rlve_manager: RLVEManager
 
+    def clone(self) -> "ProcgenEnvGroupBuilder":
+        """
+        Create a new builder with the same config. When make_envs() is called on the
+        new builder, it will generate a fresh problem via rlve_manager.generate_problem().
+        """
+        return ProcgenEnvGroupBuilder(
+            renderer=self.renderer,
+            num_envs=self.num_envs,
+            rlve_manager=self.rlve_manager,
+        )
+
     async def make_envs(self) -> Sequence[Env]:
         environment, problem_difficulty, problem = self.rlve_manager.generate_problem()
         return [

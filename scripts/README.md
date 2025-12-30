@@ -23,10 +23,10 @@ python scripts/grpo_cookbook_check.py
 
 ### Expected output
 
-Both scripts should print:
+Both scripts should print (values ≈ ±1/√2 due to unbiased std with N-1 divisor):
 
 ```
-OK [-1.0, 1.0, -1.0, 1.0]
+OK [-0.7071067811865476, 0.7071067811865476, -0.7071067811865476, 0.7071067811865476]
 ```
 
 If outputs differ, GRPO normalization behavior is not aligned between `miles` and

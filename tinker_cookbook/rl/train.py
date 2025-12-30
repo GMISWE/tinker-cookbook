@@ -331,6 +331,9 @@ class Config:
     # Logtree configuration
     num_groups_to_log: int = 4  # Number of groups to log per iteration (0 = disable logging)
 
+    # GMI-specific: RLVE configuration for GRPO native options (use-tis, balance-data, etc.)
+    rlve_config: Any | None = None
+
 
 @scope
 async def run_single_evaluation(evaluator, cfg, i_batch, sampling_client):
@@ -744,17 +747,44 @@ async def do_group_rollout_and_filter_constant_reward(
     temperature: float,
     do_remove_constant_reward_groups: bool,
     enable_logging: bool = True,
+    max_resample_attempts: int = 5,
 ) -> TrajectoryGroup | None:
     policy = TinkerTokenCompleter(sampling_client, max_tokens=max_tokens, temperature=temperature)
 
-    with logtree.optional_enable_logging(enable_logging):
-        trajectory_group = await do_group_rollout(env_group_builder, policy)
+    current_builder = env_group_builder
+    for attempt in range(max_resample_attempts):
+        with logtree.optional_enable_logging(enable_logging and attempt == 0):
+            trajectory_group = await do_group_rollout(current_builder, policy)
 
-    # Remove if all trajectories have the same reward
-    if do_remove_constant_reward_groups and all_same(trajectory_group.get_total_rewards()):
-        return None
-    else:
-        return trajectory_group
+        # Remove if all trajectories have the same reward
+        trajectory_groups = [trajectory_group]
+        if do_remove_constant_reward_groups:
+            trajectory_groups = remove_constant_reward_groups(trajectory_groups)
+
+        if len(trajectory_groups) > 0:
+            return trajectory_groups[0]
+
+        # Group was filtered - try to resample with a new builder
+        if attempt < max_resample_attempts - 1:
+            try:
+                current_builder = current_builder.clone()
+                logger.info(
+                    f"Group filtered (zero variance rewards), resampling... "
+                    f"attempt {attempt + 2}/{max_resample_attempts}"
+                )
+            except NotImplementedError:
+                # Builder doesn't support resampling
+                logger.warning(
+                    f"Group filtered but builder doesn't support clone() - cannot resample"
+                )
+                return None
+
+    # Max retries exceeded - return the last trajectory group anyway to avoid empty batch
+    logger.warning(
+        f"Max resample attempts ({max_resample_attempts}) reached, "
+        f"returning last group to avoid empty batch"
+    )
+    return trajectory_group
 
 
 @scope
@@ -971,8 +1001,15 @@ async def do_train_step_streaming_and_get_sampling_client(
             # To have the same results as the sync implementation, we will
             # remove these and train on a smaller batch.
             wrapped_trajectory_groups = [g for g in wrapped_trajectory_groups if g is not None]
+
+            # Skip minibatch if all groups were filtered (zero variance rewards)
             if len(wrapped_trajectory_groups) == 0:
+                logger.warning(
+                    f"[stream_minibatch] Step {i_batch}, Substep {i_substep}, Minibatch {i_minibatch}: "
+                    "All groups filtered (zero variance). Skipping minibatch."
+                )
                 i_minibatch += 1
+                wrapped_trajectory_groups = []
                 continue
 
             data_D, prepare_minibatch_metrics = await prepare_minibatch(
@@ -1166,17 +1203,27 @@ async def do_sync_training(
         if cfg.remove_constant_reward_groups:
             trajectory_groups_P = remove_constant_reward_groups(trajectory_groups_P)
 
-        # Train step
-        sampling_client, train_step_metrics = await do_train_step_and_get_sampling_client(
-            cfg,
-            i_batch,
-            training_client,
-            service_client,
-            tokenizer,
-            env_group_builders_P,
-            trajectory_groups_P,
-            dataset=dataset,
-        )
+        # Skip training step if all groups were filtered (zero variance rewards)
+        if len(trajectory_groups_P) == 0:
+            logger.warning(
+                f"Batch {i_batch}: All {len(env_group_builders_P)} groups were filtered "
+                "(zero variance rewards after max resample attempts). Skipping training step."
+            )
+            # Still need to get a sampling client for the next iteration
+            sampling_client = await training_client.save_weights_for_sampler_async()
+            train_step_metrics = {"train/skipped_empty_batch": 1}
+        else:
+            # Train step
+            sampling_client, train_step_metrics = await do_train_step_and_get_sampling_client(
+                cfg,
+                i_batch,
+                training_client,
+                service_client,
+                tokenizer,
+                env_group_builders_P,
+                trajectory_groups_P,
+                dataset=dataset,
+            )
 
         # Log metrics
         metrics.update(train_step_metrics)
@@ -1253,6 +1300,7 @@ async def main(
             rank=cfg.lora_rank,
             debug_train_only=cfg.debug_train_only,
             max_batch_size=max_batch_size,
+            rlve_config=cfg.rlve_config,
         )
 
     # Get tokenizer from training client

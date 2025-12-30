@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 import chz
+from tinker import types as tinker_types
 from tinker_cookbook import cli_utils, model_info
 from tinker_cookbook.recipes.rlve.procgen_env import ProcgenDatasetBuilder
 from tinker_cookbook.rl.train import AsyncConfig, Config, main
@@ -38,7 +39,7 @@ class CLIConfig:
 
     # RLVE configuration
     environment_list: str | None = None  # Comma-separated list of environments (default: all 400)
-    reward_key: str = "accuracy"
+    reward_key: str = "reward"  # Continuous score [-1, +1] vs binary accuracy [0, 1]
     initial_difficulty: int = 0
     difficulty_sliding_window_size: int = 4
     min_prompts_before_difficulty_check: int = 8
@@ -90,8 +91,9 @@ class CLIConfig:
     max_steps_off_policy: int | None = None
     loss_fn: Literal["importance_sampling", "ppo"] = "importance_sampling"
     advantage_estimator: Literal["center", "grpo"] = "grpo"
-    grpo_reward_center: bool = True
-    grpo_std_normalization: bool = True
+    # Match original RLVE behavior: use raw rewards [-1, +1] as advantages (no centering/normalization)
+    grpo_reward_center: bool = False
+    grpo_std_normalization: bool = False
 
 
 
@@ -150,6 +152,19 @@ async def cli_main(cli_config: CLIConfig):
         advantage_estimator=cli_config.advantage_estimator,
         grpo_reward_center=cli_config.grpo_reward_center,
         grpo_std_normalization=cli_config.grpo_std_normalization,
+        # RLVE configuration for GRPO native options (use-tis, balance-data, etc.)
+        rlve_config=tinker_types.RLVEConfig(
+            enabled=True,
+            environment_list=cli_config.get_procgen_config()["environment_list"],
+            rollout_max_response_len=cli_config.max_tokens,
+            rollout_batch_size=cli_config.groups_per_batch,
+            n_samples_per_prompt=cli_config.group_size,
+            num_rollout=500,
+            over_sampling_batch_size=384,
+            balance_data=True,
+            partial_rollout=True,
+            use_dynamic_sampling_filter=True,
+        ),
     )
 
     cli_utils.check_log_dir(log_path, behavior_if_exists=cli_config.behavior_if_log_dir_exists)
