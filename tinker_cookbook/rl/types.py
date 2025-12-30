@@ -125,6 +125,16 @@ class EnvGroupBuilder(ABC):
         """
         return []
 
+    def get_prompt_id(self) -> str:
+        """
+        Return a stable identifier for this prompt/group.
+        Implement in subclasses when using global reward statistics.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support get_prompt_id(). "
+            "Override this method to enable global stats."
+        )
+
     def clone(self) -> "EnvGroupBuilder":
         """
         Create a new builder with the same configuration but that will generate fresh

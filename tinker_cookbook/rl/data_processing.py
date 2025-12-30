@@ -11,7 +11,8 @@ from typing import List, Literal
 import tinker
 import torch
 from tinker import TensorData
-from tinker_cookbook.rl.types import Trajectory, TrajectoryGroup
+from tinker_cookbook.rl.reward_history import RewardHistory
+from tinker_cookbook.rl.types import EnvGroupBuilder, Trajectory, TrajectoryGroup
 from tinker_cookbook.supervised.common import (
     create_rightshifted_model_input_and_leftshifted_targets,
 )
@@ -29,9 +30,38 @@ def compute_advantages(
     eps: float = 1e-6,
     grpo_reward_center: bool = True,
     grpo_std_normalization: bool = True,
+    use_global_stats: bool = False,
+    env_group_builders_P: List[EnvGroupBuilder] | None = None,
+    reward_history: RewardHistory | None = None,
 ) -> List[torch.Tensor]:
     """Compute advantages for each trajectory, centered within groups."""
     advantages_P: list[torch.Tensor] = []
+
+    if use_global_stats:
+        if env_group_builders_P is None or reward_history is None:
+            raise ValueError(
+                "env_group_builders_P and reward_history must be provided when use_global_stats=True"
+            )
+        for traj_group, env_builder in safezip(trajectory_groups_P, env_group_builders_P):
+            rewards_G = torch.tensor(traj_group.get_total_rewards(), dtype=torch.float32)
+            prompt_id = env_builder.get_prompt_id()
+            reward_history.add_rewards(prompt_id, rewards_G.tolist())
+            global_mean = reward_history.get_mean(prompt_id)
+            global_std = reward_history.get_std(prompt_id)
+
+            if estimator == "center":
+                advantages_G = rewards_G - global_mean
+            elif estimator == "grpo":
+                if grpo_reward_center:
+                    rewards_G = rewards_G - global_mean
+                if grpo_std_normalization:
+                    denom = max(global_std, eps)
+                    rewards_G = rewards_G / denom
+                advantages_G = rewards_G
+            else:
+                raise ValueError(f"Unknown advantage estimator: {estimator}")
+            advantages_P.append(advantages_G)
+        return advantages_P
 
     for traj_group in trajectory_groups_P:
         rewards_G = torch.tensor(traj_group.get_total_rewards(), dtype=torch.float32)
