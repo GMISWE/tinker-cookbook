@@ -208,10 +208,21 @@ async def train_step(
     learning_rate: float,
     num_substeps: int,
     loss_fn: LossFnType,
+    group_size: int = 8,
 ) -> tuple[List[torch.Tensor], dict[str, Any]]:
     """Train the model on collected trajectories.
 
     Pipelines forward_backward and optim_step so they land on the same clock cycle.
+
+    Args:
+        data_D: List of training datums
+        training_client: The training client to use
+        learning_rate: Learning rate for optimizer step
+        num_substeps: Number of substeps to split the batch into
+        loss_fn: Loss function type (importance_sampling, ppo, etc.)
+        group_size: Number of samples per group (n_samples_per_prompt in Miles).
+            Batches with fewer samples than this will be skipped to avoid
+            Miles partition assertion errors.
 
     Returns:
         Tuple of (training_logprobs_D, aggregated_metrics) where metrics
@@ -223,6 +234,18 @@ async def train_step(
     if len(batches) == 0 or all(len(b) == 0 for b in batches):
         logger.warning("Empty batch in train_step - skipping training step")
         return [], {"train/skipped_empty_batch": 1}
+
+    # Check if any batch is empty or too small for GRPO grouping (causes Miles assertion error)
+    # Miles requires: num_groups = len(samples) // n_samples_per_prompt >= 1
+    # With balance_data=True, each DP rank needs at least group_size samples
+    # Empty batches (len=0) also cause assertion failure in get_seqlen_balanced_partitions
+    for i, batch_d in enumerate(batches):
+        if len(batch_d) < group_size:
+            logger.warning(
+                f"Batch {i} has {len(batch_d)} samples < group_size ({group_size}) - "
+                "skipping training step to avoid Miles partition assertion error"
+            )
+            return [], {"train/skipped_undersized_batch": 1}
 
     adam_params = tinker.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     training_logprobs_D: list[torch.Tensor] = []
@@ -1146,6 +1169,19 @@ async def do_train_step_streaming_and_get_sampling_client(
             )
             metrics.update(prepare_minibatch_metrics)
 
+            # Check if batch is empty or too small for GRPO grouping
+            # Miles requires: num_groups = len(samples) // n_samples_per_prompt >= 1
+            # Empty batches (len=0) also cause assertion failure in get_seqlen_balanced_partitions
+            group_size = getattr(cfg.dataset_builder, 'group_size', 8)
+            if len(data_D) < group_size:
+                logger.warning(
+                    f"[stream_minibatch] Step {i_batch}, Substep {i_substep}, Minibatch {i_minibatch}: "
+                    f"Batch has {len(data_D)} samples < group_size ({group_size}). Skipping minibatch."
+                )
+                i_minibatch += 1
+                wrapped_trajectory_groups = []
+                continue
+
             # Enqueue forward-backward (we'll await results after all minibatches are enqueued)
             with timed(f"train/fwd_bwd_substep_{i_substep}_mb_{i_minibatch}_enqueue", metrics):
                 forward_backward_futures.append(
@@ -1250,6 +1286,9 @@ async def do_train_step_and_get_sampling_client(
     )
     metrics.update(prepare_minibatch_metrics)
 
+    # Get group_size from dataset_builder for batch size validation
+    group_size = getattr(cfg.dataset_builder, 'group_size', 8)
+
     with timed("train", metrics):
         training_logprobs_D, miles_metrics = await train_step(
             data_D,
@@ -1257,6 +1296,7 @@ async def do_train_step_and_get_sampling_client(
             cfg.learning_rate,
             cfg.num_substeps,
             cfg.loss_fn,
+            group_size=group_size,
         )
 
     sampling_client, full_batch_metrics = await compute_full_batch_metrics_and_get_sampling_client(
