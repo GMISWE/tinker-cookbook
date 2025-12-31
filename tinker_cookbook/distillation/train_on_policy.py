@@ -242,14 +242,18 @@ async def do_train_step_and_get_sampling_client(
     )
     metrics.update(prepare_minibatch_metrics)
 
+    # For distillation, we use group_size=1 since we don't use GRPO grouping
     with timed("train", metrics):
-        training_logprobs_D = await train_step(
+        training_logprobs_D, miles_metrics = await train_step(
             data_D,
             training_client,
             cfg.learning_rate,
             cfg.num_substeps,
             cfg.loss_fn,
+            group_size=1,  # Distillation doesn't use GRPO groups
         )
+        # Add Miles metrics to output
+        metrics.update(miles_metrics)
 
     sampling_client, full_batch_metrics = await compute_full_batch_metrics_and_get_sampling_client(
         training_client,
