@@ -14,6 +14,20 @@ import torch
 from tinker_cookbook.utils import trace
 from tinker_cookbook.utils.misc_utils import safezip
 
+# Concurrency limit for SGLang logprobs requests to avoid overloading
+LOGPROBS_CONCURRENCY_LIMIT = 8
+
+
+async def gather_with_concurrency(coros, limit: int = LOGPROBS_CONCURRENCY_LIMIT):
+    """Run coroutines with a concurrency limit to avoid overwhelming SGLang."""
+    semaphore = asyncio.Semaphore(limit)
+
+    async def limited_coro(coro):
+        async with semaphore:
+            return await coro
+
+    return await asyncio.gather(*[limited_coro(c) for c in coros])
+
 
 def compute_kl_sample_train(
     data_D: list[tinker.Datum], training_logprobs_D: list[torch.Tensor]
@@ -61,12 +75,10 @@ async def compute_post_kl(
         datum.model_input.append_int(cast(int, datum.loss_fn_inputs["target_tokens"].data[-1]))
         for datum in data_D
     ]
-    new_logprobs_D = await asyncio.gather(
-        *[
-            post_sampling_client.compute_logprobs_async(sequence_input)
-            for sequence_input in full_sequence_inputs_D
-        ]
-    )
+    new_logprobs_D = await gather_with_concurrency([
+        post_sampling_client.compute_logprobs_async(sequence_input)
+        for sequence_input in full_sequence_inputs_D
+    ])
 
     prev_logprobs_D = [datum.loss_fn_inputs["logprobs"].to_torch() for datum in data_D]
     action_masks = [datum.loss_fn_inputs["mask"].to_torch() > 0 for datum in data_D]
@@ -99,12 +111,10 @@ async def incorporate_kl_penalty(
         datum.model_input.append_int(cast(int, datum.loss_fn_inputs["target_tokens"].data[-1]))
         for datum in data_D
     ]
-    base_logprobs_D = await asyncio.gather(
-        *[
-            base_sampling_client.compute_logprobs_async(sequence_input)
-            for sequence_input in full_sequence_inputs_D
-        ]
-    )
+    base_logprobs_D = await gather_with_concurrency([
+        base_sampling_client.compute_logprobs_async(sequence_input)
+        for sequence_input in full_sequence_inputs_D
+    ])
     # compute the logprob differences, zeroed out when the mask == 0
     sampled_logprobs_D = [datum.loss_fn_inputs["logprobs"].to_torch() for datum in data_D]
     float_masks = [datum.loss_fn_inputs["mask"].to_torch().float() for datum in data_D]
