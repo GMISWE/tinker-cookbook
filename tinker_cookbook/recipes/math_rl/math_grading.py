@@ -497,10 +497,12 @@ def grade_answer_math_verify(given_answer: str, ground_truth: str) -> bool:
     if not ground_truth.startswith("$") and not ground_truth.endswith("$"):
         ground_truth = f"${ground_truth}$"
 
-    given_answer_parsed = parse(given_answer)
-    ground_truth_parsed = parse(ground_truth)
+    # Disable internal signal-based timeout (doesn't work in threads)
+    # The outer ThreadPoolExecutor timeout provides protection
+    given_answer_parsed = parse(given_answer, parsing_timeout=None)
+    ground_truth_parsed = parse(ground_truth, parsing_timeout=None)
 
-    is_correct = verify(given_answer_parsed, ground_truth_parsed)
+    is_correct = verify(given_answer_parsed, ground_truth_parsed, timeout_seconds=None)
 
     return is_correct
 
