@@ -23,7 +23,11 @@ echo "=========================================="
 echo ""
 echo "[Step 1/4] Killing existing processes..."
 pkill -9 -f "tinker_cookbook.recipes.rlve.train" 2>/dev/null || true
+pkill -9 -f "tinker_cookbook.recipes.reinforce_ada.train" 2>/dev/null || true
 pkill -9 -f "uvicorn.*training" 2>/dev/null || true
+# Kill orphaned sglang processes (not killed by ray stop)
+pkill -9 -f "sglang::scheduler" 2>/dev/null || true
+pkill -9 -f "sglang::detokenizer" 2>/dev/null || true
 sleep 2
 echo "  ✓ Processes killed"
 
