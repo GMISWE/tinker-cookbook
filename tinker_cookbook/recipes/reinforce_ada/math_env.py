@@ -1,8 +1,24 @@
 import math
+import re
 from functools import partial
 from typing import Literal, Sequence
 
 import chz
+
+
+# Patterns that are known to cause grading timeouts
+HARD_EXPRESSION_PATTERNS = [
+    r"S_\{?n\}?",      # S_n type expressions (summation notation)
+    r"\\cot",          # Cotangent expressions
+]
+
+
+def is_hard_expression(answer: str) -> bool:
+    """Detect expressions that are known to cause grading timeouts."""
+    for pattern in HARD_EXPRESSION_PATTERNS:
+        if re.search(pattern, answer):
+            return True
+    return False
 from datasets import load_dataset
 from tinker_cookbook import renderers
 from tinker_cookbook.recipes.math_rl.math_grading import (
@@ -68,18 +84,25 @@ class MathEnv(ProblemEnv):
 
 
 def safe_grade(given_answer: str, ground_truth: str, grader: str = "sympy", timeout: float = 1.0):
+    # Skip hard-to-grade expressions that are known to cause timeouts
+    if is_hard_expression(ground_truth):
+        logger.debug(f"[GRADE] Skipping hard expression: {ground_truth[:50]}...")
+        return False
+
     if grader == "sympy":
         grader_func = grade_answer
     elif grader == "math_verify":
         grader_func = grade_answer_math_verify
     else:
         raise ValueError(f"Invalid grader: {grader}")
+    logger.debug(f"[GRADE] Starting grade: {given_answer[:50]}... vs {ground_truth[:50]}...")
     out = run_with_timeout_signal(
         grader_func, args=(given_answer, ground_truth), timeout_seconds=int(math.ceil(timeout))
     )
     if out is None:
         logger.warning(f"Timeout grading {given_answer} against {ground_truth}")
         return False
+    logger.debug(f"[GRADE] Grade complete: result={out}")
     return out
 
 
