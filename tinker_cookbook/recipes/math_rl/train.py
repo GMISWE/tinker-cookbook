@@ -41,6 +41,9 @@ class CLIConfig:
     # Useful for very large batch sizes.
     num_substeps: int = 1
 
+    # Total number of training batches
+    n_batches: int = 100
+
     # Logging configuration
     log_path: str | None = None
     wandb_project: str | None = None
@@ -69,13 +72,14 @@ def get_dataset_builder(
     renderer_name: str,
     group_size: int,
     seed: int = 0,
+    n_batches: int = 100,
 ) -> RLDatasetBuilder:
     if env == "arithmetic":
         return arithmetic_env.ArithmeticDatasetBuilder(
             batch_size=batch_size,
             model_name_for_tokenizer=model_name,
             renderer_name=renderer_name,
-            n_batches=100,
+            n_batches=n_batches,
             include_fewshot=True,
             group_size=group_size,
         )
@@ -121,6 +125,7 @@ async def cli_main(cli_config: CLIConfig):
             renderer_name=renderer_name,
             group_size=cli_config.group_size,
             seed=cli_config.seed,
+            n_batches=cli_config.n_batches,
         ),
         model_name=cli_config.model_name,
         lora_rank=cli_config.lora_rank,
