@@ -61,8 +61,11 @@ class ProblemEnv(Env):
     async def step(self, action: Action) -> StepResult:
         message, parse_success = self.renderer.parse_response(action)
         content = renderers.get_text_content(message)
+        logger.debug(f"[STEP] Starting step, checking format...")
         correct_format = float(parse_success) and float(self.check_format(content))
+        logger.debug(f"[STEP] Format check done: {correct_format}, now checking answer...")
         correct_answer = float(self.check_answer(content))
+        logger.debug(f"[STEP] Answer check done: {correct_answer}")
         total_reward = self.format_coef * (correct_format - 1) + correct_answer
 
         # Log the attempt

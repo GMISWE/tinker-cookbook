@@ -154,15 +154,18 @@ class AdaptiveSampler:
             if not active_indices:
                 break
 
+            logger.info(f"[ADAPTIVE] Round {round_num}/{self.config.max_rounds} starting, active_prompts={len(active_indices)}")
             round_start = time.time()
 
             # Generate for active prompts only
             active_builders = [env_group_builders[i] for i in active_indices]
 
             # Generate trajectories for active prompts
+            logger.info(f"[ADAPTIVE] Round {round_num}: calling _generate_round for {len(active_builders)} builders")
             round_groups_by_prompt = await self._generate_round(
                 active_builders, self.config.samples_per_round
             )
+            logger.info(f"[ADAPTIVE] Round {round_num}: _generate_round returned {len(round_groups_by_prompt)} groups")
 
             # Process results and update caches
             completed_this_round = 0
@@ -290,9 +293,11 @@ class AdaptiveSampler:
                 env_to_builder_idx.append(builder_idx)
                 builder_envs[builder_idx].append(env)
 
+        logger.info(f"[ADAPTIVE] _generate_round: starting asyncio.gather for {len(all_envs)} rollouts")
         trajectories = await asyncio.gather(
             *[do_single_rollout(self.policy, env) for env in all_envs]
         )
+        logger.info(f"[ADAPTIVE] _generate_round: asyncio.gather completed, {len(trajectories)} trajectories")
 
         # Group trajectories by their original builder
         builder_trajectories: dict[int, list] = defaultdict(list)
