@@ -106,7 +106,7 @@ This serves as a complement to hard clipping:
 | `pipeline_model_parallel_size` | 1 | 1 | PP disabled |
 | `sequence_parallel` | True | False | SP for memory efficiency |
 
-**Note**: Parallelism is configured in opentinker-miles `slime_builder.py`, not in tinker-cookbook.
+**Note**: Parallelism is configured in tinkercloud `slime_builder.py`, not in tinker-cookbook.
 
 ## 16 Default RLVE Environments
 
@@ -156,7 +156,7 @@ python -m tinker_cookbook.recipes.rlve.train \
 
 1. **TIS (Truncated Importance Sampling)**: Implemented in Miles, not exposed via API
 2. **Asymmetric Clipping** (`eps_clip_high`): Not available in tinker
-3. **Parallelism Settings**: Configured server-side in opentinker-miles
+3. **Parallelism Settings**: Configured server-side in tinkercloud
 4. **Over-sampling** (`over_sampling_batch_size`): Miles-internal optimization
 
 ### Compensating Mechanisms
