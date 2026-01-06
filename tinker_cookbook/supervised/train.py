@@ -218,10 +218,15 @@ async def main(config: Config):
         )
         logger.info(f"Loaded weights from {config.load_checkpoint_path}")
     else:
+        # Extract max_seq_len from dataset config for parallelism decisions
+        max_seq_len = 2048  # Default
+        if hasattr(config.dataset_builder, 'common_config') and config.dataset_builder.common_config:
+            max_seq_len = config.dataset_builder.common_config.max_length or 2048
         training_client = await service_client.create_lora_training_client_async(
             base_model=config.model_name,
             rank=config.lora_rank,
             user_metadata=user_metadata,
+            max_seq_len=max_seq_len,
         )
 
     dataset, maybe_test_dataset = config.dataset_builder()
