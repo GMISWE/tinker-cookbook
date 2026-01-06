@@ -2,7 +2,7 @@
 # RLVE Environment Cleanup Script
 # Kills processes, restarts Ray, starts server - but does NOT start training
 # Usage: ./cleanup_rlve.sh [--no-server]
-#   --no-server: Skip starting the opentinker-miles server
+#   --no-server: Skip starting the tinkercloud server
 
 set -e
 
@@ -36,9 +36,9 @@ echo ""
 echo "[Step 2/4] Cleaning logs and Python cache..."
 rm -rf ${LOG_DIR}/rlve-tinker 2>/dev/null || true
 rm -f ${LOG_DIR}/tinker-rlve.log 2>/dev/null || true
-rm -f ${LOG_DIR}/opentinker-miles.log 2>/dev/null || true
+rm -f ${LOG_DIR}/tinkercloud.log 2>/dev/null || true
 mkdir -p ${LOG_DIR}
-find /root/gavin/opentinker-miles -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find /root/gavin/tinkercloud -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find /root/gavin/tinker-cookbook -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find /root/gavin/miles -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 echo "  ✓ Logs and cache cleaned"
@@ -60,16 +60,16 @@ else
     exit 1
 fi
 
-# Step 4: Start opentinker-miles server (optional)
+# Step 4: Start tinkercloud server (optional)
 if [ "$START_SERVER" = true ]; then
     echo ""
-    echo "[Step 4/4] Starting opentinker-miles server..."
-    cd /root/gavin/opentinker-miles
+    echo "[Step 4/4] Starting tinkercloud server..."
+    cd /root/gavin/tinkercloud
 
     ALLOW_PARTIAL_BATCHES=true \
-    PYTHONPATH=/root/gavin/opentinker-miles:/root/Megatron-LM:/root/miles:$PYTHONPATH \
+    PYTHONPATH=/root/gavin/tinkercloud:/root/Megatron-LM:/root/miles:$PYTHONPATH \
     nohup python3 -m uvicorn training.api:app --host 0.0.0.0 --port 8000 \
-        >> ${LOG_DIR}/opentinker-miles.log 2>&1 &
+        >> ${LOG_DIR}/tinkercloud.log 2>&1 &
 
     SERVER_PID=$!
     echo "  Server PID: $SERVER_PID"
@@ -83,7 +83,7 @@ if [ "$START_SERVER" = true ]; then
         fi
         if [ $i -eq 30 ]; then
             echo "  ✗ Server failed to start after 30s"
-            tail -20 ${LOG_DIR}/opentinker-miles.log
+            tail -20 ${LOG_DIR}/tinkercloud.log
             exit 1
         fi
         sleep 1
@@ -107,7 +107,7 @@ if [ "$START_SERVER" = true ]; then
     echo "Server is running. You can now:"
     echo "  - Run RLVE training manually"
     echo "  - Run tests against the server"
-    echo "  - Check server logs: tail -f ${LOG_DIR}/opentinker-miles.log"
+    echo "  - Check server logs: tail -f ${LOG_DIR}/tinkercloud.log"
 else
     echo "Ray is ready. Server was not started."
     echo "To start server manually, use /restart-server"
