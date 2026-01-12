@@ -123,8 +123,8 @@ def get_recommended_renderer_names(model_name: str) -> list[str]:
         return ["llama3"]
     elif attributes.organization == "Qwen":
         if attributes.version_str == "2.5":
-            # Qwen2.5 uses qwen3 renderer (same chat template)
-            return ["qwen3"]
+            # Qwen2.5 uses qwen3_instruct renderer (no <think> tags)
+            return ["qwen3_instruct"]
         elif attributes.version_str == "3":
             if attributes.is_vl:
                 if "-Instruct" in model_name:

@@ -3,15 +3,61 @@
 # Based on: kgateway/.../RLVE/scripts/training/Qwen2.5-7B/rlve-4xGB200.sh
 #
 # Usage:
-#   ./run_rlve_gb200.sh                    # Default: 0.5B model, 100 batches
+#   ./run_rlve_gb200.sh                    # Default: 7B model, 1000 batches
 #   ./run_rlve_gb200.sh 7B 1000            # 7B model, 1000 batches
 #   MODEL=Qwen/Qwen2.5-7B-Instruct ./run_rlve_gb200.sh
 
-set -e
+set -ex
 
 # Configuration
 MODEL_SIZE=${1:-"7B"}
 N_BATCHES=${2:-1000}
+
+#######################################
+# Pre-run setup steps
+#######################################
+
+echo "=== 1. Kill GPU processes ==="
+nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9 2>/dev/null || true
+sleep 2
+nvidia-smi | grep -E "MiB|%"
+
+echo "=== 2. Restart Ray ==="
+ray stop --force 2>/dev/null || true
+sleep 3
+ray start --head --port=6379 --dashboard-host=0.0.0.0 --dashboard-port=8265
+
+echo "=== 3. Restart tinkercloud ==="
+pkill -9 -f "uvicorn.*training" 2>/dev/null || true
+sleep 2
+ORIG_DIR="$(pwd)"
+cd /root/gavin/tinkercloud
+ALLOW_PARTIAL_BATCHES=true \
+PYTHONPATH=/root/gavin/tinkercloud:/root/Megatron-LM:/root/miles:$PYTHONPATH \
+nohup python3 -m uvicorn training.api:app --host 0.0.0.0 --port 8000 >> /data/logs/tinkercloud.log 2>&1 &
+cd "$ORIG_DIR"
+echo "Waiting for server to start..."
+sleep 10
+
+# Wait for server to be healthy
+for i in {1..30}; do
+  if curl -s http://localhost:8000/health -H "X-API-Key: slime-dev-key" | grep -q "healthy"; then
+    echo "Server is healthy"
+    break
+  fi
+  echo "Waiting... ($i/30)"
+  sleep 2
+done
+
+curl -s http://localhost:8000/health -H "X-API-Key: slime-dev-key" | python3 -m json.tool
+
+echo "=== 4. Run cleanup ==="
+TINKER_BASE_URL=http://localhost:8000 TINKER_API_KEY=slime-dev-key \
+python3 /root/gavin/tinker_gmi/tests_integration/cleanup_test_env.py 2>/dev/null || true
+
+#######################################
+# RLVE Training Configuration
+#######################################
 
 # Model selection
 case "$MODEL_SIZE" in
@@ -42,9 +88,10 @@ export TINKER_API_KEY="${TINKER_API_KEY:-slime-dev-key}"
 export WANDB_API_KEY="${WANDB_API_KEY:-0ed1fa8a77196635759510132f81ea55ced801bd}"
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 
-# Paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COOKBOOK_DIR="$(dirname "$SCRIPT_DIR")"
+# Paths - use readlink -f to get absolute path regardless of how script is invoked
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# Go up 4 levels: scripts -> rlve -> recipes -> tinker_cookbook -> tinker-cookbook
+COOKBOOK_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 LOG_DIR="/data/logs/rlve-tinker"
 LOG_FILE="/data/logs/tinker-rlve.log"
 
