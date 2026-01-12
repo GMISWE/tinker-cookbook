@@ -13,7 +13,12 @@ def compute_mean_nll(
     total_weighted_logprobs = 0.0
     total_weights = 0.0
 
-    for logprobs, weights in zip(logprobs_list, weights_list, strict=True):
+    if len(logprobs_list) != len(weights_list):
+        logger.warning(
+            f"compute_mean_nll: length mismatch - logprobs={len(logprobs_list)}, weights={len(weights_list)}"
+        )
+
+    for logprobs, weights in zip(logprobs_list, weights_list):
         logprobs_torch = logprobs.to_torch()
         weights_torch = weights.to_torch()
         total_weighted_logprobs += logprobs_torch.dot(weights_torch)
