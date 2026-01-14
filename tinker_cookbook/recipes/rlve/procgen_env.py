@@ -214,12 +214,18 @@ class ProcgenEnv(ProblemEnv):
             config["passing_reward_threshold"] = self.problem.passing_reward_threshold
         problem.set_config(config)
 
-        verifier_result = self.problem.verifier(response)
+        verifier_result = problem.verifier(response)
         self.rlve_manager.update_single_sample(self.environment, self.problem_difficulty, verifier_result["accuracy"] == 1)
         return verifier_result
 
     async def initial_observation(self) -> tuple[Observation, StopCondition]:
-        TinyZero_TEMPLATE = """A conversation between User and Assistant. The user asks a question, and the assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. Show your work in <think> </think> tags, and return the final answer in <answer> </answer> tags."""
+        # Use correct answer marker in template based on configuration
+        if self.answer_marker_type == r"\boxed{}":
+            answer_format_instruction = r"return the final answer in \boxed{} format"
+        else:  # <answer></answer>
+            answer_format_instruction = "return the final answer in <answer> </answer> tags"
+
+        TinyZero_TEMPLATE = f"""A conversation between User and Assistant. The user asks a question, and the assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. Show your work in <think> </think> tags, and {answer_format_instruction}."""
         user_prompt = self.get_question()
         if self.apply_chat_template:
             user_prompt = TinyZero_TEMPLATE + "\n\n" + user_prompt
