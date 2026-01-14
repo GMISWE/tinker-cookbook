@@ -34,7 +34,7 @@ class CLIConfig:
     groups_per_batch: int = 128 # train_bsz
     n_batches: int = 1000000 # #total_steps
     learning_rate: float = 1e-5
-    max_tokens: int = 16384
+    max_tokens: int = 4096
     kl_penalty_coef: float = 0.0
 
     # RLVE configuration

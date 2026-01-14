@@ -69,7 +69,7 @@ async def compute_post_kl(
 ) -> Dict[str, float]:
     """Compute post-update KL divergence metrics."""
     # Compute logprobs at all data items
-    # This is a bit ugly, but we first reconstruct the original sequence from before we did the
+    # We first reconstruct the original sequence from before we did the
     # shifting to get the inputs and targets.
     full_sequence_inputs_D = [
         datum.model_input.append_int(cast(int, datum.loss_fn_inputs["target_tokens"].data[-1]))
@@ -82,6 +82,7 @@ async def compute_post_kl(
 
     prev_logprobs_D = [datum.loss_fn_inputs["logprobs"].to_torch() for datum in data_D]
     action_masks = [datum.loss_fn_inputs["mask"].to_torch() > 0 for datum in data_D]
+
     flat_diffs = [
         (prev_logprobs - torch.tensor(new_logprobs[1:]))[action_mask]
         for new_logprobs, prev_logprobs, action_mask in safezip(
@@ -106,7 +107,7 @@ async def incorporate_kl_penalty(
     Compute KL against base model. Adjust advantages in-place by logp_base - logp_current - avg_kl,
     where avg_kl is the average of logp_base - logp_current (which is -KL[current, base])
     """
-    # Compute logprobs at all data items
+    # Compute logprobs at all data items (reconstruct full sequence)
     full_sequence_inputs_D = [
         datum.model_input.append_int(cast(int, datum.loss_fn_inputs["target_tokens"].data[-1]))
         for datum in data_D

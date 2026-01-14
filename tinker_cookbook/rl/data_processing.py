@@ -174,13 +174,14 @@ def trajectory_to_data(traj: Trajectory, traj_advantage: float) -> list[tinker.D
         sampled_logprobs_T = SequenceAccumulator.sampled_logprobs[1:]
         advantages_T = SequenceAccumulator.advantages[1:]
         mask_T = SequenceAccumulator.mask[1:]
+
         assert (
             input_tokens_T.length
             == len(target_tokens_T)
             == len(sampled_logprobs_T)
             == len(advantages_T)
             == len(mask_T)
-        )
+        ), f"Length mismatch: input={input_tokens_T.length}, target={len(target_tokens_T)}, logprobs={len(sampled_logprobs_T)}"
         return tinker.Datum(
             model_input=input_tokens_T,
             loss_fn_inputs={
