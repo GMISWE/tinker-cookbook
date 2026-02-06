@@ -73,6 +73,7 @@ class CLIConfig:
     # See https://tinker-docs.thinkingmachines.ai/losses
     loss_fn: LossFnType = "importance_sampling"
     loss_fn_config: dict[str, Any] | None = None
+    advantage_estimator: str = "grpo"  # Per-group advantages for proper learning signal
 
     max_steps: int | None = None
 
@@ -171,6 +172,7 @@ async def cli_main(cli_config: CLIConfig):
         else None,
         loss_fn=cli_config.loss_fn,
         loss_fn_config=cli_config.loss_fn_config,
+        advantage_estimator=cli_config.advantage_estimator,
         max_steps=cli_config.max_steps,
     )
 
