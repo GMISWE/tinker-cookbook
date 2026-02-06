@@ -136,6 +136,11 @@ class GuessNumberDatasetBuilder(RLDatasetBuilder):
     train_fraction: float = 0.9
     test_group_size: int = 4
 
+    @property
+    def group_size(self) -> int:
+        """Alias for train_group_size for compatibility with rl/train.py batch validation."""
+        return self.train_group_size
+
     async def __call__(self) -> tuple[RLDataset, RLDataset]:
         player_renderer = get_renderer(self.renderer_name, get_tokenizer(self.model_name))
         train_numbers, test_numbers = self._get_train_and_test_numbers()

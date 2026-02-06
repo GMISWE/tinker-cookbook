@@ -63,6 +63,7 @@ class CLIConfig:
 
     max_steps_off_policy: int | None = None
     loss_fn: LossFnType = "importance_sampling"
+    advantage_estimator: str = "grpo"  # Per-group advantages for proper learning signal
 
 
 def get_dataset_builder(
@@ -148,6 +149,7 @@ async def cli_main(cli_config: CLIConfig):
         if cli_config.max_steps_off_policy is not None
         else None,
         loss_fn=cli_config.loss_fn,
+        advantage_estimator=cli_config.advantage_estimator,
     )
 
     cli_utils.check_log_dir(log_path, behavior_if_exists=cli_config.behavior_if_log_dir_exists)
