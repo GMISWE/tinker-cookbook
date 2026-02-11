@@ -319,6 +319,12 @@ async def train_step(
     if metrics is not None and optim_result is not None and optim_result.metrics:
         metrics.update(optim_result.metrics)
 
+    # NeMo RL deferred mode: forward_backward returns empty logprobs,
+    # logprobs are computed during optim_step (on pre-step weights).
+    if not training_logprobs_D and optim_result is not None and optim_result.loss_fn_outputs:
+        for output in optim_result.loss_fn_outputs:
+            training_logprobs_D.append(output["logprobs"].to_torch())
+
     return training_logprobs_D
 
 
@@ -1345,6 +1351,12 @@ async def do_train_step_streaming_and_get_sampling_client(
 
         if optim_result.metrics:
             metrics.update(optim_result.metrics)
+
+        # NeMo RL deferred mode: forward_backward returns empty logprobs,
+        # logprobs are computed during optim_step (on pre-step weights).
+        if not all_training_logprobs_D and optim_result.loss_fn_outputs:
+            for output in optim_result.loss_fn_outputs:
+                all_training_logprobs_D.append(output["logprobs"].to_torch())
 
     # Aggregate metrics across the entire batch
     metrics.update(compute_sampling_client_metrics(all_wrapped_trajectory_groups))
