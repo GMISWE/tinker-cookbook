@@ -153,11 +153,11 @@ def print_group(
 async def optim_step(
     training_client: tinker.TrainingClient,
     learning_rate: float,
-) -> None:
-    """Apply the accumulated gradients to update the model weights"""
+) -> tinker.OptimStepResponse:
+    """Apply the accumulated gradients to update the model weights."""
     adam_params = tinker.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     optim_step_future = await training_client.optim_step_async(adam_params)
-    await optim_step_future.result_async()
+    return await optim_step_future.result_async()
 
 
 @scope
@@ -252,7 +252,13 @@ async def train_step(
             if isinstance(value, (int, float)):
                 aggregated_metrics[key] = aggregated_metrics.get(key, 0.0) + float(value)
 
-        await optim_step(training_client, learning_rate)
+        optim_result = await optim_step(training_client, learning_rate)
+
+        # NeMo RL deferred mode: forward_backward returns empty logprobs,
+        # logprobs are computed during optim_step (on pre-step weights).
+        if not training_logprobs and optim_result.loss_fn_outputs:
+            for output in optim_result.loss_fn_outputs:
+                training_logprobs_D.append(output["logprobs"].to_torch())
 
     return training_logprobs_D, aggregated_metrics
 
@@ -1179,7 +1185,13 @@ async def do_train_step_streaming_and_get_sampling_client(
 
         # Run optimizer step only once after all minibatches
         with timed(f"train/optim_substep_{i_substep}", metrics):
-            await optim_step(training_client, cfg.learning_rate)
+            optim_result = await optim_step(training_client, cfg.learning_rate)
+
+        # NeMo RL deferred mode: forward_backward returns empty logprobs,
+        # logprobs are computed during optim_step (on pre-step weights).
+        if not all_training_logprobs_D and optim_result.loss_fn_outputs:
+            for output in optim_result.loss_fn_outputs:
+                all_training_logprobs_D.append(output["logprobs"].to_torch())
 
     # Aggregate metrics across the entire batch
     metrics.update(compute_sampling_client_metrics(all_wrapped_trajectory_groups))
