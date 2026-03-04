@@ -336,6 +336,14 @@ async def main(config: Config):
         weights = [datum.loss_fn_inputs["weights"] for datum in submitted.data]
         train_nll = compute_mean_nll(logprobs, weights)
 
+        # Prefer aggregate training loss from the backend (e.g. NeMo RL deferred
+        # mode where forward_backward returns placeholder logprobs and the real
+        # NLL is computed inside policy.train() during optim_step).  This is the
+        # aggregate cross-entropy, NOT a per-token recomputation.
+        optim_metrics = optim_step_result.metrics or {}
+        if "total_loss" in optim_metrics and train_nll == 0.0:
+            train_nll = optim_metrics["total_loss"]
+
         metrics.update(
             num_sequences=len(submitted.data),
             num_tokens=sum(datum.model_input.length for datum in submitted.data),
