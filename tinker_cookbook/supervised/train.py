@@ -317,11 +317,19 @@ async def main(config: Config):
 
         with timed("step", metrics):
             fwd_bwd_result = await submitted.fwd_bwd_future.result_async()
-            await submitted.optim_step_future.result_async()
+            optim_result = await submitted.optim_step_future.result_async()
 
         logprobs = [x["logprobs"] for x in fwd_bwd_result.loss_fn_outputs]
         weights = [datum.loss_fn_inputs["weights"] for datum in submitted.data]
         train_nll = compute_mean_nll(logprobs, weights)
+
+        # Prefer aggregate training loss from the backend (e.g. NeMo RL deferred
+        # mode where forward_backward returns placeholder logprobs and the real
+        # NLL is computed inside policy.train() during optim_step).  This is the
+        # aggregate cross-entropy, NOT a per-token recomputation.
+        optim_metrics = optim_result.metrics or {}
+        if "total_loss" in optim_metrics and train_nll == 0.0:
+            train_nll = optim_metrics["total_loss"]
 
         metrics.update(
             num_sequences=len(submitted.data),
