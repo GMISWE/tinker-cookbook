@@ -1153,7 +1153,7 @@ async def do_train_step_streaming_and_get_sampling_client(
             # Check if batch is empty or too small for GRPO grouping
             # Miles requires: num_groups = len(samples) // n_samples_per_prompt >= 1
             # Empty batches (len=0) also cause assertion failure in get_seqlen_balanced_partitions
-            group_size = cfg.dataset_builder.group_size
+            group_size = getattr(cfg.dataset_builder, "group_size", 1)
             if len(data_D) < group_size:
                 logger.warning(
                     f"[stream_minibatch] Step {i_batch}, Substep {i_substep}, Minibatch {i_minibatch}: "
@@ -1269,7 +1269,7 @@ async def do_train_step_and_get_sampling_client(
     metrics.update(prepare_minibatch_metrics)
 
     # Get group_size from dataset_builder for batch size validation
-    group_size = cfg.dataset_builder.group_size
+    group_size = getattr(cfg.dataset_builder, "group_size", 1)
 
     with timed("train", metrics):
         training_logprobs_D, miles_metrics = await train_step(
