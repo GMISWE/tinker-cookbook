@@ -181,7 +181,7 @@ async def forward_backward(
         ppo_kl, pg_clipfrac, etc. from Miles (Megatron-computed).
     """
     fwd_bwd_future = await training_client.forward_backward_async(
-        list(map(remove_mask, batch_d)), loss_fn=loss_fn
+        batch_d, loss_fn=loss_fn
     )
     fwd_bwd_result = await fwd_bwd_future.result_async()
 
