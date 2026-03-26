@@ -1207,10 +1207,12 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     """
     metrics = {}
 
-    # Compute KL metrics
-    async with trace.scope_span("compute_kl_sample_train"):
-        kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
-        metrics.update(kl_sample_train_metrics)
+    # Compute KL metrics (skip for NeMo RL deferred mode where logprobs may be
+    # empty or have different shape than the sampling logprobs in data_D)
+    if training_logprobs_D and training_logprobs_D[0].numel() > 0:
+        async with trace.scope_span("compute_kl_sample_train"):
+            kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
+            metrics.update(kl_sample_train_metrics)
 
     # Get a sampling client using the new weights
     sampling_client, checkpoint_metrics = await save_checkpoint_and_get_sampling_client(
