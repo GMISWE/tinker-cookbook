@@ -330,7 +330,7 @@ async def main(config: Config):
             optim_step_result = await submitted.optim_step_future.result_async()
 
         if optim_step_result.metrics:
-            metrics.update(optim_step_result.metrics)
+            metrics.update({f"backend/{k}": v for k, v in optim_step_result.metrics.items()})
 
         logprobs = [x["logprobs"] for x in fwd_bwd_result.loss_fn_outputs]
         weights = [datum.loss_fn_inputs["weights"] for datum in submitted.data]

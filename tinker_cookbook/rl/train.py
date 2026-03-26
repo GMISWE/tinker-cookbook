@@ -319,7 +319,7 @@ async def train_step(
             optim_future = next_optim_future
 
     if metrics is not None and optim_result is not None and optim_result.metrics:
-        metrics.update(optim_result.metrics)
+        metrics.update({f"backend/{k}": v for k, v in optim_result.metrics.items()})
 
     # NeMo RL deferred mode: forward_backward returns empty logprobs,
     # logprobs are computed during optim_step (on pre-step weights).
@@ -1347,7 +1347,7 @@ async def do_train_step_streaming_and_get_sampling_client(
             optim_result = await optim_future.result_async()
 
         if optim_result.metrics:
-            metrics.update(optim_result.metrics)
+            metrics.update({f"backend/{k}": v for k, v in optim_result.metrics.items()})
 
         # NeMo RL deferred mode: forward_backward returns empty logprobs,
         # logprobs are computed during optim_step (on pre-step weights).
