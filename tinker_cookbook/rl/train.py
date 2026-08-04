@@ -424,6 +424,10 @@ class Config:
     wandb_project: str | None = None
     wandb_name: str | None = None
     debug_train_only: bool = False  # GMI: RL needs rollout actors for sampling (Slime-specific)
+    # GMI: declared max sampler weight-version staleness (A4). 0 = strict
+    # on-policy; k>0 lets the service defer sampler weight sync up to k
+    # versions, certified per sample (ver(S)).
+    staleness_k: int = 0
 
     # Max batch size for training API (avoids gradient accumulation issues with logprobs)
     # Should match groups_per_batch * group_size. Default None = auto-detect from dataset_builder.
@@ -1683,6 +1687,7 @@ async def main(
             debug_train_only=config.debug_train_only,
             max_batch_size=max_batch_size,
             rlve_config=config.rlve_config,
+            staleness_k=config.staleness_k,
         )
 
     # Get tokenizer from training client
