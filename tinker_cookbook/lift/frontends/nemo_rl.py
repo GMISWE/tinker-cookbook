@@ -160,6 +160,7 @@ class _Elab:
         self.left = set(self.flat)
         self.ledger: list[LedgerEntry] = []
         self.profile: dict[str, Any] = {}
+        self.assets: dict[str, str] = {}
 
     def _loc(self, key: str) -> ir.Loc:
         return ir.Loc(self.source, key)
@@ -284,9 +285,11 @@ def elaborate_sft(path: str) -> LiftResult:
         e.take("data.validation")
         e.p("data.validation", None, "val derived from train split")
     tmpl = e.take("policy.tokenizer.chat_template")
-    renderer = (
-        "jinja:" + hashlib.sha256(str(tmpl).encode()).hexdigest()[:8] if tmpl else "model_default"
-    )
+    if tmpl:
+        renderer = "jinja:" + hashlib.sha256(str(tmpl).encode()).hexdigest()[:8]
+        e.assets[renderer] = str(tmpl)  # digest names the term; text rides the side table
+    else:
+        renderer = "model_default"
     e.p("policy.tokenizer.chat_template", renderer, "renderer identity = template digest")
     tk_kwargs = e.take("policy.tokenizer.chat_template_kwargs")
     if tk_kwargs:
@@ -334,10 +337,18 @@ def elaborate_sft(path: str) -> LiftResult:
             int(max_len),
             ir.Tokenize(
                 str(tok),
-                ir.Render(renderer, ir.SrcData(f"{ds_name}:{split}", loc=e._loc("data.train"))),
+                # roles_to_train_on defaults to ["assistant"] (llm_message_utils.py:150)
+                ir.Render(
+                    renderer,
+                    ir.SrcData(f"{ds_name}:{split}", loc=e._loc("data.train")),
+                    train_on="assistant",
+                ),
                 add_bos=bool(add_bos),
                 add_eos=bool(add_eos),
             ),
+            # sft_processor over-length: stub + loss_multiplier=0, NOT truncation
+            # (processors.py:171-177) — a different program from truncate.
+            policy="mask_out",
         ),
     )
 
@@ -496,4 +507,6 @@ def elaborate_sft(path: str) -> LiftResult:
         ),
         loc=ir.Loc(path, ""),
     )
-    return LiftResult(source=path, program=program, profile=e.profile, ledger=e.ledger)
+    return LiftResult(
+        source=path, program=program, profile=e.profile, ledger=e.ledger, assets=e.assets
+    )
