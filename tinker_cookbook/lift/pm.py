@@ -196,24 +196,26 @@ class PassManager:
             if name not in registry:
                 raise KeyError(f"unknown pass: {name}")
 
-    def run(self, program: ir.Program, source: str = "") -> tuple[ir.Program, CompilationReport]:
+    def run(self, unit, source: str = "") -> tuple[object, CompilationReport]:
+        """The unit is usually an ir.Program; the select/emit stages of
+        PM[Select] flow non-Node units, for which the Node-only checks
+        (wf, hole conservation, leak/hole reporting) are skipped."""
         rpt = CompilationReport(pipeline=self.pipeline_str, source=source)
-        cur = program
+        cur = unit
         for name, opts in self.stages:
             cur, stop = self._run_one(name, opts, cur, rpt)
             if stop:
                 rpt.stopped = True
                 break
-        rpt.leaks = tuple(sorted(self.am.get("leaks", cur)))  # type: ignore[arg-type]
-        rpt.holes = tuple(h.canon() for h in self.am.get("holes", cur))  # type: ignore[union-attr]
-        rpt.final_hash = cur.hash
+        if isinstance(cur, ir.Node):
+            rpt.leaks = tuple(sorted(self.am.get("leaks", cur)))  # type: ignore[arg-type]
+            rpt.holes = tuple(h.canon() for h in self.am.get("holes", cur))  # type: ignore[union-attr]
+        rpt.final_hash = getattr(cur, "hash", "")
         return cur, rpt
 
-    def _run_one(
-        self, name: str, opts: dict, cur: ir.Program, rpt: CompilationReport
-    ) -> tuple[ir.Program, bool]:
+    def _run_one(self, name: str, opts: dict, cur, rpt: CompilationReport) -> tuple[object, bool]:
         p = self.registry[name]
-        holes_before = len(ir.holes(cur))
+        holes_before = len(ir.holes(cur)) if isinstance(cur, ir.Node) else None
         t0 = time.perf_counter()
         out = p.run(cur, self.am, opts)
         dt = (time.perf_counter() - t0) * 1e3
@@ -237,23 +239,27 @@ class PassManager:
             raise ValueError(f"unknown refusal policy: {policy}")
 
         if out.status == "changed":
-            assert isinstance(out.term, ir.Program)
             nxt = out.term
             rpt.guarantee = meet(rpt.guarantee, p.level)
-            # hole conservation: no pass may fabricate or drop obligations
-            if len(ir.holes(nxt)) != holes_before and not opts.get("fills_holes"):
-                rec.status = "error"
-                rec.errors = ("hole count changed by pass",)
-                rpt.records.append(rec)
-                return cur, True
-            if self.verify_each:
-                errs = self.am.get("wf", nxt)
-                if errs:
+            if isinstance(nxt, ir.Node):
+                # hole conservation: no pass may fabricate or drop obligations
+                if (
+                    holes_before is not None
+                    and len(ir.holes(nxt)) != holes_before
+                    and not opts.get("fills_holes")
+                ):
                     rec.status = "error"
-                    rec.errors = tuple(errs)  # type: ignore[arg-type]
+                    rec.errors = ("hole count changed by pass",)
                     rpt.records.append(rec)
                     return cur, True
-            rec.hash_after = nxt.hash
+                if self.verify_each:
+                    errs = self.am.get("wf", nxt)
+                    if errs:
+                        rec.status = "error"
+                        rec.errors = tuple(errs)  # type: ignore[arg-type]
+                        rpt.records.append(rec)
+                        return cur, True
+            rec.hash_after = getattr(nxt, "hash", "")
             rpt.records.append(rec)
             return nxt, False
 
