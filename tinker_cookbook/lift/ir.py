@@ -222,6 +222,7 @@ class LinearLR(Node):
 class WarmupLR(Node):
     warmup_steps: int
     inner: Sched
+    init_frac: float = 0.0  # start of warmup as a fraction of inner's base LR
 
 
 Sched = Union[ConstLR, LinearLR, WarmupLR]
@@ -262,6 +263,8 @@ class Render(Node):
 class Tokenize(Node):
     tokenizer: str
     inner: StreamExpr
+    add_bos: bool = True
+    add_eos: bool = True
 
 
 @dataclass(frozen=True)

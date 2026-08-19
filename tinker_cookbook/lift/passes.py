@@ -133,6 +133,26 @@ class NormRepairPass:
         return Outcome.unchanged()
 
 
+class SchedApproxPass:
+    """Fold a DEGENERATE warmup (init_frac ~= 1 for very few steps) into its
+    inner schedule. Level E1 by declaration: the first `warmup_steps` steps see
+    an LR off by at most (1-init_frac) relative. Bound: warmup_steps *
+    (1-init_frac)/2 <= tol (default 1e-4 fractional step-LR mass). Anything
+    larger stays distinct — no silent thresholding beyond the declared tol."""
+
+    name = "sched-approx"
+    level = ELevel.E1
+
+    def run(self, program: ir.Program, am: AnalysisManager, opts: dict) -> Outcome:
+        lr = program.lr
+        tol = float(opts.get("tol", 1e-4))
+        if isinstance(lr, ir.WarmupLR):
+            mass = lr.warmup_steps * (1.0 - lr.init_frac) / 2.0
+            if 0 <= mass <= tol:
+                return Outcome.changed(replace(program, lr=lr.inner))
+        return Outcome.unchanged()
+
+
 class AnalysisPass:
     """No-op transform that forces an analysis into the AM cache (ledger use)."""
 
@@ -151,6 +171,7 @@ def default_registry() -> dict:
     ps = [
         VerifyPass(),
         SchedCanonPass(),
+        SchedApproxPass(),
         NormCanonPass(),
         NormRepairPass(),
         AnalysisPass("leaks"),
@@ -163,3 +184,4 @@ def default_registry() -> dict:
 DEFAULT_PIPELINE = "wf,sched-canon,norm-canon,wf,hash"
 PERMISSIVE_PIPELINE = "wf,sched-canon,norm-canon<policy=repair:norm-repair>,wf,hash"
 LEDGER_PIPELINE = "wf,leaks,hash"
+COLLAPSE_PIPELINE = "wf,sched-canon,sched-approx,norm-canon,wf,hash"
