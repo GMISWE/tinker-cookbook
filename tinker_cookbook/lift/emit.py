@@ -148,7 +148,12 @@ class EmitPass:
                 )
             if p.adapter.targets:
                 obl.append(
-                    Obligation("surface", "lora_targets", "target-module selection not exposed")
+                    Obligation(
+                        "surface",
+                        "lora_targets",
+                        "arbitrary target-module lists not exposed; LoraConfig has only "
+                        "coarse flags (train_mlp/train_attn/train_unembed)",
+                    )
                 )
 
         if p.opt.wd:
@@ -181,10 +186,12 @@ class EmitPass:
         dataset_spec = {
             "source": src.ref,
             "renderer": ren.renderer,
+            "train_on": ren.train_on,
             "tokenizer": tok.tokenizer,
             "add_bos": tok.add_bos,
             "add_eos": tok.add_eos,
             "max_length": tr.max_len,
+            "overlength_policy": tr.policy,
             "batch_size": bs.batch_size,
             "epochs": bs.epochs,
             "seed": bs.seed,

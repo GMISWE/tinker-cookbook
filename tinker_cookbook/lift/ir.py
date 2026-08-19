@@ -257,6 +257,7 @@ class SrcData(Node):
 class Render(Node):
     renderer: str
     inner: StreamExpr
+    train_on: str = "assistant"  # loss-mask rule: "assistant" | "final" | "all"
 
 
 @dataclass(frozen=True)
@@ -271,6 +272,10 @@ class Tokenize(Node):
 class Truncate(Node):
     max_len: int
     inner: StreamExpr
+    # "truncate": cut to max_len. "mask_out": over-length samples are stubbed
+    # and removed from the loss (nemo_rl sft_processor: loss_multiplier=0) but
+    # still occupy batch slots — a DIFFERENT program from truncation.
+    policy: str = "truncate"
 
 
 @dataclass(frozen=True)

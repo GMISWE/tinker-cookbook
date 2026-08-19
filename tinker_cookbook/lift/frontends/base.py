@@ -30,6 +30,10 @@ class LiftResult:
     program: ir.Program
     profile: dict[str, object]  # execution attrs, consumed below the waist
     ledger: list[LedgerEntry] = field(default_factory=list)
+    # digest -> full text for artifacts the term references only by digest
+    # (e.g. jinja chat templates): program identity stays hash-based, while
+    # adapters/certifiers can execute the artifact.
+    assets: dict[str, str] = field(default_factory=dict)
 
     @property
     def unmapped(self) -> list[LedgerEntry]:
