@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import re
@@ -261,6 +262,24 @@ def _remove_mask(datum: tinker.Datum) -> tinker.Datum:
         model_input=datum.model_input,
         loss_fn_inputs={k: v for k, v in datum.loss_fn_inputs.items() if k != "mask"},
     )
+
+
+def _dump_rollout_lengths(
+    path: Path, step: int, duration_s: float, trajectory_group: TrajectoryGroup
+) -> None:
+    # One line per group: rollout wall time + sampled-token counts (duration is
+    # shared across the group's concurrent trajectories).
+    rec = {
+        "step": step,
+        "duration_s": round(duration_s, 4),
+        "n_trajs": len(trajectory_group.trajectories_G),
+        "tokens_per_traj": [
+            sum(len(t.ac.tokens) for t in traj.transitions)
+            for traj in trajectory_group.trajectories_G
+        ],
+    }
+    with open(path, "a") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 def _training_logprobs_from_fwd_bwd(
@@ -631,6 +650,13 @@ async def do_sync_training_with_stream_minibatch(
                     worker_metrics["time/trajectory_group_worker_loop/total"] = (
                         time.time() - t_start
                     )
+                    if trajectory_group is not None:
+                        _dump_rollout_lengths(
+                            Path(config.log_path) / "rollout_lengths.jsonl",
+                            i_batch,
+                            time.time() - t_start,
+                            trajectory_group,
+                        )
                     # Ingest error info (safe: same event loop thread)
                     if error_counter is not None:
                         error_counter.ingest(trajectory_group)
@@ -1215,7 +1241,12 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     # empty or have different shape than the sampling logprobs in data_D)
     if training_logprobs_D and training_logprobs_D[0].numel() > 0:
         async with trace.scope_span("compute_kl_sample_train"):
-            kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
+            kl_sample_train_metrics = compute_kl_sample_train(
+                data_D,
+                training_logprobs_D,
+                dump_path=Path(log_path) / "term2_diffs.jsonl",
+                step=i_batch,
+            )
             metrics.update(kl_sample_train_metrics)
 
     # Get a sampling client using the new weights
