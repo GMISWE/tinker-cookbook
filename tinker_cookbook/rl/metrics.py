@@ -7,6 +7,7 @@ and computing training metrics.
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -49,11 +50,30 @@ def compute_kl_sample_train(
         # Get logprobs from sampling
         sampling_logprobs = datum.loss_fn_inputs["logprobs"].to_torch()
         action_mask = datum.loss_fn_inputs["mask"].to_torch() > 0
+        if os.environ.get("TINKER_KT_DIAG") and dump_path is not None:
+            # Diagnostic: per-datum length conventions + both alignments.
+            T = sampling_logprobs.shape[0]
+            L = training_logprobs.shape[0]
+            rec = {"T": T, "L": L}
+            if L == T - 1:
+                m = action_mask[1:]
+                dl = (sampling_logprobs[1:][m] - training_logprobs[m]).abs()
+                m2 = action_mask[:-1]
+                dr = (sampling_logprobs[:-1][m2] - training_logprobs[m2]).abs()
+                rec["p50_dropfirst"] = round(dl.median().item(), 6) if dl.numel() else None
+                rec["p50_droplast"] = round(dr.median().item(), 6) if dr.numel() else None
+            elif L == T:
+                d0 = (sampling_logprobs[action_mask] - training_logprobs[action_mask]).abs()
+                rec["p50_same"] = round(d0.median().item(), 6) if d0.numel() else None
+            with open(str(dump_path) + ".diag", "a") as f:
+                f.write(json.dumps(rec) + "\n")
         if training_logprobs.shape[0] == sampling_logprobs.shape[0] - 1:
-            # miles returns next-token logprobs (length T-1, index i predicts
-            # token i+1); nemo_rl returns length T. Align to T-1.
-            sampling_logprobs = sampling_logprobs[1:]
-            action_mask = action_mask[1:]
+            # miles returns length T-1 with logprobs[i] = logprob of token i
+            # (final position missing); nemo_rl returns length T. Align by
+            # dropping the last position (drop-last beat drop-first on
+            # 256/256 datums in the dual-alignment probe).
+            sampling_logprobs = sampling_logprobs[:-1]
+            action_mask = action_mask[:-1]
         # Extract only action token logprobs
         sampling_logprobs_actions = sampling_logprobs[action_mask]
         training_logprobs_actions = training_logprobs[action_mask]
