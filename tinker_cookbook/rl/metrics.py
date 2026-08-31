@@ -49,6 +49,11 @@ def compute_kl_sample_train(
         # Get logprobs from sampling
         sampling_logprobs = datum.loss_fn_inputs["logprobs"].to_torch()
         action_mask = datum.loss_fn_inputs["mask"].to_torch() > 0
+        if training_logprobs.shape[0] == sampling_logprobs.shape[0] - 1:
+            # miles returns next-token logprobs (length T-1, index i predicts
+            # token i+1); nemo_rl returns length T. Align to T-1.
+            sampling_logprobs = sampling_logprobs[1:]
+            action_mask = action_mask[1:]
         # Extract only action token logprobs
         sampling_logprobs_actions = sampling_logprobs[action_mask]
         training_logprobs_actions = training_logprobs[action_mask]
