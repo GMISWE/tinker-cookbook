@@ -6,6 +6,8 @@ and computing training metrics.
 """
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any, cast
 
 import tinker
@@ -30,9 +32,16 @@ async def gather_with_concurrency(coros, limit: int = LOGPROBS_CONCURRENCY_LIMIT
 
 
 def compute_kl_sample_train(
-    data_D: list[tinker.Datum], training_logprobs_D: list[torch.Tensor]
+    data_D: list[tinker.Datum],
+    training_logprobs_D: list[torch.Tensor],
+    dump_path: Path | None = None,
+    step: int | None = None,
 ) -> dict[str, float]:
-    """Compute KL divergence metrics between sampling and training logprobs."""
+    """Compute KL divergence metrics between sampling and training logprobs.
+
+    When dump_path is set, appends the per-token diff distribution
+    (sampling - training, action tokens, same weights) as one JSON line.
+    """
     all_diffs: list[torch.Tensor] = []
     all_sampling_logprobs: list[torch.Tensor] = []
 
@@ -56,6 +65,25 @@ def compute_kl_sample_train(
 
     flat_sampling_logprobs = torch.cat(all_sampling_logprobs)
     entropy_sample = -flat_sampling_logprobs.mean().item()
+
+    if dump_path is not None:
+        d = flat_diffs.float()
+        q = torch.quantile(d.abs(), torch.tensor([0.5, 0.9, 0.99]))
+        sub = d[torch.randperm(d.numel())[:2048]]
+        rec = {
+            "step": step,
+            "n_tokens": d.numel(),
+            "mean": d.mean().item(),
+            "std": d.std().item(),
+            "p50_abs": q[0].item(),
+            "p90_abs": q[1].item(),
+            "p99_abs": q[2].item(),
+            "max_abs": d.abs().max().item(),
+            "subsample": [round(x, 6) for x in sub.tolist()],
+        }
+        with open(dump_path, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+
     return {
         "optim/kl_sample_train_v1": kl_sample_train_v1,
         "optim/kl_sample_train_v2": kl_sample_train_v2,
