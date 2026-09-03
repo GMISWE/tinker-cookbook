@@ -67,13 +67,13 @@ def compute_kl_sample_train(
                 rec["p50_same"] = round(d0.median().item(), 6) if d0.numel() else None
             with open(str(dump_path) + ".diag", "a") as f:
                 f.write(json.dumps(rec) + "\n")
-        if training_logprobs.shape[0] == sampling_logprobs.shape[0] - 1:
-            # miles returns length T-1 with logprobs[i] = logprob of token i
-            # (final position missing); nemo_rl returns length T. Align by
-            # dropping the last position (drop-last beat drop-first on
-            # 256/256 datums in the dual-alignment probe).
-            sampling_logprobs = sampling_logprobs[:-1]
-            action_mask = action_mask[:-1]
+        # The server returns one training logprob per target (same length as
+        # the sampling logprobs); a mismatch is a server-side convention bug,
+        # not something to paper over here.
+        assert training_logprobs.shape[0] == sampling_logprobs.shape[0], (
+            f"training logprobs have length {training_logprobs.shape[0]} but the datum "
+            f"has {sampling_logprobs.shape[0]} targets"
+        )
         # Extract only action token logprobs
         sampling_logprobs_actions = sampling_logprobs[action_mask]
         training_logprobs_actions = training_logprobs[action_mask]
