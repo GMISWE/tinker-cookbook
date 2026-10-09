@@ -44,6 +44,12 @@ def compute_kl_sample_train(
         # Get logprobs from sampling
         sampling_logprobs = datum.loss_fn_inputs["logprobs"].to_torch()
         action_mask = datum.loss_fn_inputs["mask"].to_torch() > 0
+        # one training logprob per target token; a backend returning T-1 would
+        # misalign every position after the first, so fail loudly here
+        assert training_logprobs.shape[0] == sampling_logprobs.shape[0], (
+            f"training logprobs {tuple(training_logprobs.shape)} vs targets "
+            f"{tuple(sampling_logprobs.shape)}: the backend's logprob length does not match the datum"
+        )
         # Extract only action token logprobs
         sampling_logprobs_actions = sampling_logprobs[action_mask]
         training_logprobs_actions = training_logprobs[action_mask]

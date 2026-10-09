@@ -280,6 +280,19 @@ def _training_logprobs_from_fwd_bwd(
     return [output["logprobs"].to_torch() for output in fwd_bwd_result.loss_fn_outputs]
 
 
+def _training_logprobs_from_step(
+    fwd_bwd_result: tinker.ForwardBackwardOutput, optim_result: tinker.OptimStepResponse
+) -> list[torch.Tensor]:
+    """Per-datum training logprobs of one step. A backend that defers the loss
+    outputs to the optimizer step returns an empty list from forward_backward
+    and the real outputs on optim_step (TinkerCloud nemo_rl)."""
+    if fwd_bwd_result.loss_fn_outputs:
+        return _training_logprobs_from_fwd_bwd(fwd_bwd_result)
+    if optim_result.loss_fn_outputs:
+        return [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
+    return []
+
+
 @trace.scope
 async def train_step(
     data_D: list[tinker.Datum],
@@ -354,15 +367,16 @@ async def train_step(
             next_optim_future = None
         # Consume current results
         fwd_bwd_result = await fwd_bwd_future.result_async()
-        training_logprobs_D.extend(_training_logprobs_from_fwd_bwd(fwd_bwd_result))
         optim_result = await optim_future.result_async()
+        training_logprobs_D.extend(_training_logprobs_from_step(fwd_bwd_result, optim_result))
         # Move to next iteration
         if next_fwd_bwd_future is not None and next_optim_future is not None:
             fwd_bwd_future = next_fwd_bwd_future
             optim_future = next_optim_future
 
     if metrics is not None and optim_result is not None and optim_result.metrics:
-        metrics.update(optim_result.metrics)
+        # backend/ keeps the server's optimizer metrics apart from the loop's own
+        metrics.update({f"backend/{k}": v for k, v in optim_result.metrics.items()})
 
     return training_logprobs_D
 
@@ -1434,10 +1448,13 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     """
     metrics = {}
 
-    # Compute KL metrics
-    async with trace.scope_span("compute_kl_sample_train"):
-        kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
-        metrics.update(kl_sample_train_metrics)
+    # Compute KL metrics (a backend that returns no training logprobs leaves them out)
+    if training_logprobs_D:
+        async with trace.scope_span("compute_kl_sample_train"):
+            kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
+            metrics.update(kl_sample_train_metrics)
+    else:
+        logger.warning("no training logprobs returned for this batch; kl_sample_train skipped")
 
     # Get a sampling client using the new weights
     sampling_client, checkpoint_metrics = await save_checkpoint_and_get_sampling_client(
@@ -1577,16 +1594,21 @@ async def do_train_step_streaming_and_get_sampling_client(
             optim_future = await training_client.optim_step_async(adam_params)
 
         # Now consume all forward-backward results
+        substep_logprobs_D: list[torch.Tensor] = []
         for i_mb, fwd_bwd_future in enumerate(forward_backward_futures):
             async with trace.scope_span(f"train/fwd_bwd_substep_{i_substep}_mb_{i_mb}_consume"):
                 fwd_bwd_result = await fwd_bwd_future.result_async()
-                all_training_logprobs_D.extend(_training_logprobs_from_fwd_bwd(fwd_bwd_result))
+                substep_logprobs_D.extend(_training_logprobs_from_fwd_bwd(fwd_bwd_result))
 
         async with trace.scope_span(f"train/optim_substep_{i_substep}_consume"):
             optim_result = await optim_future.result_async()
+        if not substep_logprobs_D and optim_result.loss_fn_outputs:
+            # deferred loss outputs: the optimizer step carries the whole substep's
+            substep_logprobs_D = [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
+        all_training_logprobs_D.extend(substep_logprobs_D)
 
         if optim_result.metrics:
-            metrics.update(optim_result.metrics)
+            metrics.update({f"backend/{k}": v for k, v in optim_result.metrics.items()})
 
     # Aggregate metrics across the entire batch
     metrics.update(compute_sampling_client_metrics(all_wrapped_trajectory_groups))
