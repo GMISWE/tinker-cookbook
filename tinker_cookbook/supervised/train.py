@@ -523,7 +523,7 @@ async def main(config: Config):
             train_nll = compute_mean_nll(logprobs, weights)
             # A backend that defers the loss to the optimizer step returns zero
             # placeholders from forward_backward and the aggregate cross-entropy as
-            # total_loss (TinkerCloud nemo_rl); that is the step's NLL, not a per-token one.
+            # total_loss; that is the step's NLL, not a per-token one.
             optim_metrics = optim_step_result.metrics or {}
             if "total_loss" in optim_metrics and train_nll == 0.0:
                 train_nll = optim_metrics["total_loss"]

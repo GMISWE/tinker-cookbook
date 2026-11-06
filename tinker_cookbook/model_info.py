@@ -118,7 +118,7 @@ def get_qwen_info() -> dict[str, ModelAttributes]:
         "Qwen3-VL-235B-A22B-Instruct": ModelAttributes(
             org, "3", "235B-A22B", True, _QWEN3_VL_INSTRUCT, is_vl=True
         ),
-        # Qwen2.5-Instruct: the TinkerCloud acceptance lineage; Qwen3's chat template renders them
+        # Qwen2.5-Instruct maps to the Qwen3 renderer (unverified that the two chat templates render alike)
         "Qwen2.5-0.5B-Instruct": ModelAttributes(org, "2.5", "0.5B", True, _QWEN3),
         "Qwen2.5-1.5B-Instruct": ModelAttributes(org, "2.5", "1.5B", True, _QWEN3),
         "Qwen2.5-3B-Instruct": ModelAttributes(org, "2.5", "3B", True, _QWEN3),

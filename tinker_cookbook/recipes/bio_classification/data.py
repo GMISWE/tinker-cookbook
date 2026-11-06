@@ -21,8 +21,12 @@ Q3_MAP = {"C": 0, "E": 1, "H": 2}
 Q8_MAP = {c: i for i, c in enumerate("BCEGHIST")}
 
 
+LABEL_MAPS = {"q3": Q3_MAP, "q8": Q8_MAP}
+COLUMNS = {"q3": "dssp3", "q8": "dssp8"}
+
+
 def label_map(task: str) -> dict:
-    return Q3_MAP if task == "q3" else Q8_MAP
+    return LABEL_MAPS[task]   # KeyError names an unknown task
 
 
 def num_labels(task: str) -> int:
@@ -30,7 +34,7 @@ def num_labels(task: str) -> int:
 
 
 def _col(task: str) -> str:
-    return "dssp3" if task == "q3" else "dssp8"
+    return COLUMNS[task]
 
 
 def _build_datum(tok, seq: str, ss: str, lmap: dict, max_res: int) -> types.Datum:
@@ -39,8 +43,8 @@ def _build_datum(tok, seq: str, ss: str, lmap: dict, max_res: int) -> types.Datu
     labels = [IGNORE] * len(ids)
     for i, c in enumerate(ss):
         pos = 1 + i                                   # residue i -> token pos 1+i
-        if 0 < pos < len(ids) - 1 and c in lmap:
-            labels[pos] = lmap[c]
+        if 0 < pos < len(ids) - 1:
+            labels[pos] = lmap[c]   # KeyError: a label outside the dataset's alphabet
     return types.Datum(
         model_input=types.ModelInput.from_ints(ids),
         loss_fn_inputs={"labels": types.TensorData.from_numpy(np.asarray(labels, dtype=np.int64))},

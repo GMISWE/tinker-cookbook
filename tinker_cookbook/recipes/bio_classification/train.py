@@ -6,7 +6,7 @@ Fine-tunes a bio foundation model (ESM2, an encoder) for per-residue secondary
 structure via a classification **head**. The head is declared by the model
 directory's own config.json (`prepare_model.py` builds one from the HF
 snapshot); the client sends nothing but the model path. Requires the server to
-run the `automodel` backend (`TINKERCLOUD_BACKEND=automodel`) and to read the
+run the `automodel` backend and to read the
 model directory.
 
 ```bash
@@ -14,8 +14,8 @@ python -m tinker_cookbook.recipes.bio_classification.train \
     model_name=facebook/esm2_t33_650M_UR50D task=q3 lora_rank=8
 # reproduce the blog with the 3B model:
 python -m tinker_cookbook.recipes.bio_classification.train \
-    model_name=facebook/esm2_t36_3B_UR50D task=q3   # Q3 ~0.85 on CB513
-    #                                        task=q8   # Q8 ~0.74
+    model_name=facebook/esm2_t36_3B_UR50D task=q3   # Q3 on CB513: see README "Expected"
+    #                                        task=q8
 ```
 
 Unlike `vlm_classifier` (verbalized, causal path), ESM2 is an encoder with no
@@ -63,7 +63,9 @@ def evaluate(tc, data: list[types.Datum], bs: int, task: str) -> float:
                     continue
                 total += 1
                 correct += int(int(p) == int(lab))
-    return correct / max(total, 1)
+    if total == 0:
+        raise ValueError("the eval set has no labelled positions")
+    return correct / total
 
 
 def main(cfg: Config):

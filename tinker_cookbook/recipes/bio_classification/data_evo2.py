@@ -1,4 +1,4 @@
-"""Splice-site data for the Evo2 sequence-classification recipe (feature 004 CS2).
+"""Splice-site data for the Evo2 sequence-classification recipe.
 
 Loads Nucleotide-Transformer `splice_sites_all` (30K/3K, 600 bp, 3-class),
 tokenizes the DNA with the nucleotide tokenizer, and builds tinker Datums:

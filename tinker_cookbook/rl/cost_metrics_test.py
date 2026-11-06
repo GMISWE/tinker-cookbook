@@ -301,7 +301,7 @@ def test_streaming_step_sums_the_usage_of_its_minibatches(monkeypatch):
             return _Future(SimpleNamespace(loss_fn_outputs=[]))
 
         def optim_step(self, adam_params):
-            return _Future(SimpleNamespace(metrics={}))
+            return _Future(SimpleNamespace(metrics={}, loss_fn_outputs=None))
 
     async def prepare_minibatch(env_group_builders, trajectory_groups, tokenizer, kl_client, **kw):
         return [DATA_D[0]], {"kl_policy_base": 0.5}, ROLLOUT_USAGE + REFERENCE_KL_USAGE

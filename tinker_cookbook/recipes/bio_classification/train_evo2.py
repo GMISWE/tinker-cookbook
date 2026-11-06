@@ -1,20 +1,19 @@
 """Evo2-1B DNA splice-site **sequence classification** via the tinker SDK
-(feature 004 CS2). Drives the faithful bionemo-recipes Evo2 classifier through
+Drives the faithful bionemo-recipes Evo2 classifier through
 TinkerCloud's `megatron_bridge` backend over the wire, no client-side model code.
 
 The head is declared beside the checkpoint (`prepare_model.py checkpoint_dir=...
 head=sequence labels=none,acceptor,donor`); the recipe's own knobs (tokenizer,
-splits, seq_length, iters, lr) are server configuration, `MEGATRON_BRIDGE_*`.
+splits, seq_length, iters, lr) are server configuration.
 
-Requires the server on the megatron_bridge backend (cu13 recipe env):
-    deploy_tinkercloud.sh --profile megatron_bridge      # then start the server
+Requires a server running the megatron_bridge backend.
 
     python -m tinker_cookbook.recipes.bio_classification.train_evo2 \
         base_url=http://localhost:8200 model_dir=/data/evo2_1b_mbridge \
         tokenizer_path=/workspace/evo2_megatron/tokenizers/nucleotide_fast_tokenizer_512
 
 Pin the known-good server config (28500 train, 1000 iters, lr 5e-4, r16, mean-pool);
-reproduces ~0.858 test acc (blog LoRA+head 0.966). See P5-TINKER-BACKEND.md.
+expected ~0.86 test accuracy (unverified here; blog LoRA+head 0.966).
 """
 import random
 
@@ -27,8 +26,8 @@ from tinker_cookbook.recipes.bio_classification import data_evo2 as sd
 
 @chz.chz
 class Config:
-    model_dir: str = "/data/evo2_1b_mbridge"          # MBridge checkpoint + head-declaring config.json
-    tokenizer_path: str = "/workspace/evo2_megatron/tokenizers/nucleotide_fast_tokenizer_512"
+    model_dir: str          # MBridge checkpoint + head-declaring config.json
+    tokenizer_path: str
     lora_rank: int = 16
     learning_rate: float = 5e-4
     num_epochs: int = 3
@@ -50,7 +49,9 @@ def evaluate(tc, data: list[types.Datum], bs: int) -> float:
             label = int(d.loss_fn_inputs["labels"].to_numpy().reshape(-1)[0])
             total += 1
             correct += int(int(logits.argmax(-1)) == label)
-    return correct / max(total, 1)
+    if total == 0:
+        raise ValueError("the eval set has no labelled positions")
+    return correct / total
 
 
 def main(cfg: Config):

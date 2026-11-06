@@ -309,19 +309,12 @@ def _training_logprobs_from_step(
 ) -> list[torch.Tensor]:
     """Per-datum training logprobs of one step. A backend that defers the loss
     outputs to the optimizer step returns an empty list from forward_backward
-    and the real outputs on optim_step (TinkerCloud nemo_rl)."""
+    and the real outputs on optim_step."""
     if fwd_bwd_result.loss_fn_outputs:
         return _training_logprobs_from_fwd_bwd(fwd_bwd_result)
-    deferred = _deferred_loss_fn_outputs(optim_result)
-    if deferred:
-        return [output["logprobs"].to_torch() for output in deferred]
+    if optim_result.loss_fn_outputs:
+        return [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
     return []
-
-
-def _deferred_loss_fn_outputs(optim_result: tinker.OptimStepResponse) -> list | None:
-    """The optimizer step's loss outputs. Upstream tinker's OptimStepResponse has no such
-    field: there it is absent, which means the backend deferred nothing."""
-    return getattr(optim_result, "loss_fn_outputs", None)
 
 
 @trace.scope
@@ -2133,10 +2126,9 @@ async def do_train_step_streaming_and_get_sampling_client(
 
         async with trace.scope_span(f"train/optim_substep_{i_substep}_consume"):
             optim_result = await optim_future
-        deferred = None if substep_logprobs_D else _deferred_loss_fn_outputs(optim_result)
-        if deferred:
+        if not substep_logprobs_D and optim_result.loss_fn_outputs:
             # deferred loss outputs: the optimizer step carries the whole substep's
-            substep_logprobs_D = [output["logprobs"].to_torch() for output in deferred]
+            substep_logprobs_D = [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
         all_training_logprobs_D.extend(substep_logprobs_D)
 
         if optim_result.metrics:
