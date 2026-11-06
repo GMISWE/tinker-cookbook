@@ -518,15 +518,12 @@ async def main(config: Config):
             if optim_step_result.metrics:
                 metrics.update({f"backend/{k}": v for k, v in optim_step_result.metrics.items()})
 
-            logprobs = [x["logprobs"] for x in fwd_bwd_result.loss_fn_outputs]
+            # A backend that defers the loss to the optimizer step returns placeholders from
+            # forward_backward and the real per-token logprobs with the step
+            outputs = optim_step_result.loss_fn_outputs or fwd_bwd_result.loss_fn_outputs
+            logprobs = [x["logprobs"] for x in outputs]
             weights = [datum.loss_fn_inputs["weights"] for datum in submitted.data]
             train_nll = compute_mean_nll(logprobs, weights)
-            # A backend that defers the loss to the optimizer step returns zero
-            # placeholders from forward_backward and the aggregate cross-entropy as
-            # total_loss; that is the step's NLL, not a per-token one.
-            optim_metrics = optim_step_result.metrics or {}
-            if "total_loss" in optim_metrics and train_nll == 0.0:
-                train_nll = optim_metrics["total_loss"]
 
             metrics.update(
                 num_sequences=len(submitted.data),

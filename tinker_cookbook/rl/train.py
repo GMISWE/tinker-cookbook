@@ -314,7 +314,7 @@ def _training_logprobs_from_step(
         return _training_logprobs_from_fwd_bwd(fwd_bwd_result)
     if optim_result.loss_fn_outputs:
         return [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
-    return []
+    raise ValueError("neither forward_backward nor optim_step returned training logprobs")
 
 
 @trace.scope
@@ -1931,13 +1931,10 @@ async def compute_full_batch_metrics_and_get_sampling_client(
     """
     metrics: dict[str, Any] = {}
 
-    # Compute KL metrics (a backend that returns no training logprobs leaves them out)
-    if training_logprobs_D:
-        async with trace.scope_span("compute_kl_sample_train"):
-            kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
-            metrics.update(kl_sample_train_metrics)
-    else:
-        logger.warning("no training logprobs returned for this batch; kl_sample_train skipped")
+    # Compute KL metrics
+    async with trace.scope_span("compute_kl_sample_train"):
+        kl_sample_train_metrics = compute_kl_sample_train(data_D, training_logprobs_D)
+        metrics.update(kl_sample_train_metrics)
 
     if cost_tracker is not None:
         metrics.update(cost_tracker.record_step(usage + training_usage(data_D)))
