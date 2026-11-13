@@ -99,5 +99,5 @@ def load_prompts(tokenizer: Tokenizer) -> list[Prompt]:
         )
         # `return_dict=True` gives the encoding, never the bare text or id list of the other forms
         assert not isinstance(encoded, (str, list))
-        prompts.append(Prompt(domain, [int(token) for token in encoded["input_ids"]]))
+        prompts.append(Prompt(domain, [int(token) for token in encoded.data["input_ids"]]))
     return prompts
