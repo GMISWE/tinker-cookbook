@@ -38,6 +38,7 @@ def test_the_domain_weights_of_the_recorded_batch_are_the_recorded_weights():
 
 
 def test_the_rollout_metrics_of_the_recorded_batch_are_the_reference_values():
+    """The reward metrics are per response token, the per-domain ones over that domain's tokens only."""
     weights = step.domain_weights(
         SEQUENCES["domain"],
         SEQUENCES["response_tokens"],
@@ -122,6 +123,7 @@ def test_the_order_of_each_shard_is_the_reference_order(case):
 
 
 def test_an_update_is_the_same_part_of_every_shard():
+    """Not consecutive rows of the batch: update 0 is the first half of each of the two shards."""
     shards = [[0, 1, 2, 3], [10, 11, 12, 13]]
     assert step.update_rows(shards, 2) == [[0, 1, 10, 11], [2, 3, 12, 13]]
 

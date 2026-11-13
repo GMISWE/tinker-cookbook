@@ -57,9 +57,11 @@ LossFn = Callable[[list[types.Datum], list[torch.Tensor]], tuple[torch.Tensor, d
 class Config:
     base_url: str | None = None
     log_path: str = cli_utils.runs_path("mopd")
+    # as the other recipes: a run asks before it writes into an existing directory
     behavior_if_log_dir_exists: cli_utils.LogdirBehavior = "ask"
     wandb_project: str | None = None
     wandb_name: str | None = None
+    # rollout steps, four optimizer steps each
     n_steps: int = 60
     # prompts per step; a multiple of 16, so that 4 updates split evenly over 4 shards
     batch_size: int = 128
@@ -68,6 +70,7 @@ class Config:
     # True rebuilds the reward from each update's own logprobs (the paper's method); False keeps the
     # rollout-time reward for all four updates
     refresh_advantage: bool = True
+    # of the prompt sampler: the same seed draws the same prompts in the same order
     seed: int = 1
     # A rollout batch recorded from the reference. Every step then trains on it, in the recorded order,
     # in place of this recipe's own rollouts (`batch_size`, `max_tokens` and `seed` play no part): for
