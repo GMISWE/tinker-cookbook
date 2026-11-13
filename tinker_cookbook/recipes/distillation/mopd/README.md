@@ -66,6 +66,6 @@ of 18,432 tokens. For a quick check, run `n_steps=1 batch_size=16 max_tokens=512
 
 ## Tests
 
-`step_test.py` and `data_test.py` compare the arithmetic and the prompt sampler with values recorded
+`step_test.py` and `prompts_test.py` compare the arithmetic and the prompt sampler with values recorded
 from the reference (`testdata/reference_step.pt`): one recorded step's reward, domain weights and update
 membership, and the reference's own loss and sampler on seeded inputs.
