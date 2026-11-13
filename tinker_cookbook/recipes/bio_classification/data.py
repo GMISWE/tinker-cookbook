@@ -26,7 +26,7 @@ COLUMNS = {"q3": "dssp3", "q8": "dssp8"}
 
 
 def label_map(task: str) -> dict:
-    return LABEL_MAPS[task]   # KeyError names an unknown task
+    return LABEL_MAPS[task]  # KeyError names an unknown task
 
 
 def num_labels(task: str) -> int:
@@ -39,12 +39,12 @@ def _col(task: str) -> str:
 
 def _build_datum(tok, seq: str, ss: str, lmap: dict, max_res: int) -> types.Datum:
     seq, ss = seq[:max_res], ss[:max_res]
-    ids = tok(seq)["input_ids"]                       # [CLS, res..., EOS]
+    ids = tok(seq)["input_ids"]  # [CLS, res..., EOS]
     labels = [IGNORE] * len(ids)
     for i, c in enumerate(ss):
-        pos = 1 + i                                   # residue i -> token pos 1+i
+        pos = 1 + i  # residue i -> token pos 1+i
         if 0 < pos < len(ids) - 1:
-            labels[pos] = lmap[c]   # KeyError: a label outside the dataset's alphabet
+            labels[pos] = lmap[c]  # KeyError: a label outside the dataset's alphabet
     return types.Datum(
         model_input=types.ModelInput.from_ints(ids),
         loss_fn_inputs={"labels": types.TensorData.from_numpy(np.asarray(labels, dtype=np.int64))},
@@ -52,17 +52,23 @@ def _build_datum(tok, seq: str, ss: str, lmap: dict, max_res: int) -> types.Datu
 
 
 def load(
-    model_name: str, task: str, max_res: int = 1022, subset: int = 0,
+    model_name: str,
+    task: str,
+    max_res: int = 1022,
+    subset: int = 0,
 ) -> tuple[list[types.Datum], list[types.Datum]]:
     """Return (train_datums, cb513_test_datums)."""
     tok = AutoTokenizer.from_pretrained(model_name)
-    ds = datasets.load_dataset(REPO, data_files={
-        "train": "training_hhblits.csv", "test": "CB513.csv"})
+    ds = datasets.load_dataset(
+        REPO, data_files={"train": "training_hhblits.csv", "test": "CB513.csv"}
+    )
     lmap, col = label_map(task), _col(task)
     train = ds["train"].select(range(subset)) if subset else ds["train"]
 
     def build(split) -> list[types.Datum]:
-        return [_build_datum(tok, s, ss, lmap, max_res)
-                for s, ss in zip(list(split["input"]), list(split[col]))]
+        return [
+            _build_datum(tok, s, ss, lmap, max_res)
+            for s, ss in zip(list(split["input"]), list(split[col]))
+        ]
 
     return build(train), build(ds["test"])
