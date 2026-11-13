@@ -32,7 +32,8 @@ def test_the_reward_of_recorded_logprobs_is_the_recorded_reward(row):
 
 
 def test_the_domain_weights_of_the_recorded_batch_are_the_recorded_weights():
-    """IF holds 1.7% of the batch's tokens, so its weight is near 25 where math's is near 0.27."""
+    """The recorded weights: near 24.9 for IF (1.7% of the batch's tokens), 0.27 for math and 0.89 for code
+    (about half of the tokens each)."""
     weights = step.domain_weights(_statistics(), SEQUENCES["target_share"])
     for domain, recorded in zip(SEQUENCES["domain"], SEQUENCES["domain_loss_weight"], strict=True):
         assert _relative(weights[domain], recorded) < 1e-5
