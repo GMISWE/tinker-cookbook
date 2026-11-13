@@ -29,5 +29,5 @@ def test_the_batches_are_the_reference_samplers(case):
 
 def test_a_prompt_of_the_limit_is_kept_and_one_token_more_is_dropped():
     """Only the kept prompts reach the sampler, so a longer one is never drawn."""
-    candidates = [prompts.Prompt("math", [0] * length) for length in (5, 2048, 2049, 9000)]
-    assert [len(p.tokens) for p in prompts.within_limit(candidates, 2048)] == [5, 2048]
+    pool = [prompts.Prompt("math", [0] * length) for length in (5, 2048, 2049, 9000)]
+    assert [len(p.tokens) for p in prompts.within_limit(pool, 2048)] == [5, 2048]

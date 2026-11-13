@@ -14,6 +14,12 @@ SEQUENCES = GOLD["sequences"]
 LOSS_IDS = [f"seed {case['seed']}, refresh {case['refresh']}" for case in GOLD["loss"]]
 
 
+def _statistics() -> dict[str, step.DomainStatistics]:
+    return step.domain_statistics(
+        SEQUENCES["domain"], SEQUENCES["response_tokens"], SEQUENCES["abs_reward_sum"]
+    )
+
+
 def _relative(value: float, expected: float) -> float:
     return abs(value - expected) / abs(expected)
 
@@ -27,31 +33,15 @@ def test_the_reward_of_recorded_logprobs_is_the_recorded_reward(row):
 
 def test_the_domain_weights_of_the_recorded_batch_are_the_recorded_weights():
     """IF holds 1.7% of the batch's tokens, so its weight is near 25 where math's is near 0.27."""
-    weights = step.domain_weights(
-        SEQUENCES["domain"],
-        SEQUENCES["response_tokens"],
-        SEQUENCES["abs_reward_sum"],
-        SEQUENCES["target_share"],
-    )
+    weights = step.domain_weights(_statistics(), SEQUENCES["target_share"])
     for domain, recorded in zip(SEQUENCES["domain"], SEQUENCES["domain_loss_weight"], strict=True):
         assert _relative(weights[domain], recorded) < 1e-5
 
 
 def test_the_rollout_metrics_of_the_recorded_batch_are_the_reference_values():
     """The reward metrics are per response token, the per-domain ones over that domain's tokens only."""
-    weights = step.domain_weights(
-        SEQUENCES["domain"],
-        SEQUENCES["response_tokens"],
-        SEQUENCES["abs_reward_sum"],
-        SEQUENCES["target_share"],
-    )
-    metrics = step.rollout_metrics(
-        SEQUENCES["domain"],
-        SEQUENCES["response_tokens"],
-        SEQUENCES["reward_sum"],
-        SEQUENCES["abs_reward_sum"],
-        weights,
-    )
+    weights = step.domain_weights(_statistics(), SEQUENCES["target_share"])
+    metrics = step.rollout_metrics(_statistics(), SEQUENCES["reward_sum"], weights)
     assert _relative(metrics["mt_opd/rm_scores_mean"], SEQUENCES["rm_scores_mean"]) < 1e-5
     for domain, expected in SEQUENCES["reward_abs_mean"].items():
         assert _relative(metrics[f"mt_opd/domain/{domain}/reward_abs_mean"], expected) < 1e-5
