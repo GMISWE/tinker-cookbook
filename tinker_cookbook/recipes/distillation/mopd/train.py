@@ -19,7 +19,8 @@ import torch
 from tinker import types
 
 from tinker_cookbook import cli_utils
-from tinker_cookbook.recipes.distillation.mopd import data, step
+from tinker_cookbook.recipes.distillation.mopd import prompts as prompt_set
+from tinker_cookbook.recipes.distillation.mopd import step
 from tinker_cookbook.tokenizer_utils import get_tokenizer
 from tinker_cookbook.utils import ml_log
 from tinker_cookbook.utils.git_rev import recipe_user_metadata
@@ -102,8 +103,16 @@ class Batch:
     shards: list[list[int]]
 
 
+def require_whole_updates(sequences: int, what: str) -> None:
+    """Every shard must split into the step's updates, or the rows left over would never train."""
+    if sequences % (BALANCE_SHARDS * UPDATES_PER_STEP) != 0:
+        raise ValueError(
+            f"{what} is {sequences}, not a multiple of {BALANCE_SHARDS * UPDATES_PER_STEP}"
+        )
+
+
 def sample_rollouts(
-    student: tinker.TrainingClient, prompts: list[data.Prompt], max_tokens: int, name: str
+    student: tinker.TrainingClient, prompts: list[prompt_set.Prompt], max_tokens: int, name: str
 ) -> list[Rollout]:
     sampler = student.save_weights_and_get_sampling_client(name=name)
     # T=1, no nucleus or top-k cut, stop at the model's own end token
@@ -129,17 +138,16 @@ def sample_rollouts(
 
 def own_batches(config: Config, student: tinker.TrainingClient) -> Iterator[Batch]:
     """A batch of fresh rollouts per step, the prompts drawn at the domain ratio."""
-    if config.batch_size % (BALANCE_SHARDS * UPDATES_PER_STEP) != 0:
-        raise ValueError(
-            f"batch_size {config.batch_size} is not a multiple of {BALANCE_SHARDS * UPDATES_PER_STEP}"
-        )
-    prompts = data.within_limit(data.load_prompts(get_tokenizer(STUDENT)), MAX_PROMPT_TOKENS)
+    require_whole_updates(config.batch_size, "batch_size")
+    prompts = prompt_set.within_limit(
+        prompt_set.load_prompts(get_tokenizer(STUDENT)), MAX_PROMPT_TOKENS
+    )
     if config.n_steps > len(prompts) // config.batch_size:
         raise ValueError(
             f"n_steps {config.n_steps} is more than one pass over {len(prompts)} prompts"
         )
-    draws = data.domain_batches(
-        [p.domain for p in prompts], config.batch_size, data.DOMAIN_RATIO, config.seed
+    draws = prompt_set.domain_batches(
+        [p.domain for p in prompts], config.batch_size, prompt_set.DOMAIN_RATIO, config.seed
     )
     for index, rows in enumerate(draws):
         rollouts = sample_rollouts(
@@ -163,10 +171,7 @@ def load_recorded_batch(path: str) -> Batch:
         prompt_len = int(attention[row, :width].sum())
         candidates = tensors["student_top_k_ids"][row, : len(tokens) - prompt_len].clone()
         rollouts.append(Rollout(str(domain), tokens[:prompt_len], tokens[prompt_len:], candidates))
-    if len(rollouts) % (BALANCE_SHARDS * UPDATES_PER_STEP) != 0:
-        raise ValueError(
-            f"{path} holds {len(rollouts)} sequences, not a multiple of {BALANCE_SHARDS * UPDATES_PER_STEP}"
-        )
+    require_whole_updates(len(rollouts), f"the sequence count of {path}")
     size = len(rollouts) // BALANCE_SHARDS
     return Batch(rollouts, [list(range(size * s, size * (s + 1))) for s in range(BALANCE_SHARDS)])
 
@@ -229,7 +234,7 @@ def train_step(
         by_row: dict[int, torch.Tensor] = {}
         # One teacher at a time. Observed on one service that holds the four models on shared GPUs: the
         # three forwards submitted together failed, one after another they pass. The cause is not
-        # established; where the models share no memory, submitting all three first is faster.
+        # established.
         for domain, rows in step.rows_by_domain(domains).items():
             scored = response_logprobs(
                 teachers[domain], [rollouts[i] for i in rows], [ids[i] for i in rows]

@@ -41,6 +41,21 @@ def rows_by_domain(domains: Sequence[str]) -> dict[str, list[int]]:
     return {d: [row for row, name in enumerate(domains) if name == d] for d in sorted(set(domains))}
 
 
+def domain_tokens(domains: Sequence[str], response_tokens: Sequence[int]) -> dict[str, int]:
+    return {d: sum(response_tokens[i] for i in rows) for d, rows in rows_by_domain(domains).items()}
+
+
+def reward_abs_mean(
+    domains: Sequence[str], response_tokens: Sequence[int], abs_reward: Sequence[float]
+) -> dict[str, float]:
+    """Per domain, the mean over its response positions of |the reward summed over the K ids|."""
+    tokens = domain_tokens(domains, response_tokens)
+    return {
+        d: sum(abs_reward[i] for i in rows) / tokens[d]
+        for d, rows in rows_by_domain(domains).items()
+    }
+
+
 def domain_weights(
     domains: Sequence[str],
     response_tokens: Sequence[int],
@@ -55,12 +70,9 @@ def domain_weights(
     absolute reward lies from the batch's, and all weights are scaled to a token-weighted mean of 1.
     """
     total = sum(response_tokens)
-    scale: dict[str, float] = {}
-    magnitude: dict[str, float] = {}
-    for domain, rows in rows_by_domain(domains).items():
-        tokens = sum(response_tokens[i] for i in rows)
-        scale[domain] = target_share[domain] / (tokens / total)
-        magnitude[domain] = sum(abs_reward[i] for i in rows) / tokens
+    tokens = domain_tokens(domains, response_tokens)
+    magnitude = reward_abs_mean(domains, response_tokens, abs_reward)
+    scale = {d: target_share[d] / (tokens[d] / total) for d in tokens}
     batch_magnitude = sum(scale[d] * magnitude[d] for d in scale) / sum(scale.values())
     low, high = MAGNITUDE_FACTOR_RANGE
     scale = {d: scale[d] * min(max(magnitude[d] / batch_magnitude, low), high) for d in scale}
@@ -78,13 +90,14 @@ def rollout_metrics(
     """The reference's metrics of a rollout batch, under its names. `reward_sum[i]` is sequence i's reward
     summed over its positions and ids; `abs_reward` as in `domain_weights`."""
     metrics = {"mt_opd/rm_scores_mean": sum(reward_sum) / sum(response_tokens)}
+    tokens = domain_tokens(domains, response_tokens)
+    magnitude = reward_abs_mean(domains, response_tokens, abs_reward)
     for domain, rows in rows_by_domain(domains).items():
-        tokens = sum(response_tokens[i] for i in rows)
         prefix = f"mt_opd/domain/{domain}"
         metrics[f"{prefix}/prompt_count"] = float(len(rows))
-        metrics[f"{prefix}/token_share"] = tokens / sum(response_tokens)
-        metrics[f"{prefix}/mean_response_length"] = tokens / len(rows)
-        metrics[f"{prefix}/reward_abs_mean"] = sum(abs_reward[i] for i in rows) / tokens
+        metrics[f"{prefix}/token_share"] = tokens[domain] / sum(response_tokens)
+        metrics[f"{prefix}/mean_response_length"] = tokens[domain] / len(rows)
+        metrics[f"{prefix}/reward_abs_mean"] = magnitude[domain]
         metrics[f"{prefix}/loss_weight"] = weights[domain]
     return metrics
 

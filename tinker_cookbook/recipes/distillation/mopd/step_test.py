@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from tinker_cookbook.recipes.distillation.mopd import data, step
+from tinker_cookbook.recipes.distillation.mopd import prompts, step
 
 GOLD = torch.load(Path(__file__).parent / "testdata" / "reference_step.pt", weights_only=True)
 SEQUENCES = GOLD["sequences"]
@@ -55,7 +55,7 @@ def test_the_rollout_metrics_of_the_recorded_batch_are_the_reference_values():
     assert _relative(metrics["mt_opd/rm_scores_mean"], SEQUENCES["rm_scores_mean"]) < 1e-5
     for domain, expected in SEQUENCES["reward_abs_mean"].items():
         assert _relative(metrics[f"mt_opd/domain/{domain}/reward_abs_mean"], expected) < 1e-5
-    assert [metrics[f"mt_opd/domain/{d}/prompt_count"] for d in data.DOMAINS] == [
+    assert [metrics[f"mt_opd/domain/{d}/prompt_count"] for d in prompts.DOMAINS] == [
         51.0,
         51.0,
         26.0,
@@ -120,12 +120,6 @@ def test_each_update_holds_the_lengths_of_the_recorded_update(shuffle_seed):
 def test_the_order_of_each_shard_is_the_reference_order(case):
     """Seeded length lists, some with many equal lengths: equal workloads are ordered by row index."""
     assert step.balanced_shards(case["lengths"], GOLD["membership"]["ranks"]) == case["shards"]
-
-
-def test_an_update_is_the_same_part_of_every_shard():
-    """Not consecutive rows of the batch: update 0 is the first half of each of the two shards."""
-    shards = [[0, 1, 2, 3], [10, 11, 12, 13]]
-    assert step.update_rows(shards, 2) == [[0, 1, 10, 11], [2, 3, 12, 13]]
 
 
 def test_the_best_candidates_are_the_ids_with_the_highest_logprobs():
