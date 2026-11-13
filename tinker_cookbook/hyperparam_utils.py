@@ -181,6 +181,9 @@ def _get_hidden_size(model_name: str) -> int:
 # To refresh these counts (e.g., when a new model ships), ask a Tinker team
 # member to re-run the measurement script.
 _LORA_PARAMS_PER_RANK_BY_COMPONENT: dict[str, dict[str, int]] = {
+    # Not measured: computed from the model's config with the sums the dense rows below follow
+    # (24 layers, hidden 896, MLP width 4864, key/value width 128, vocabulary 151,936).
+    "Qwen/Qwen2.5-0.5B-Instruct": {"mlp": 414_720, "attn": 135_168, "unembed": 152_832},
     "Qwen/Qwen3-235B-A22B-Instruct-2507": {
         "mlp": 56_598_528,
         "attn": 3_176_448,
