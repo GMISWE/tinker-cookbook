@@ -97,5 +97,7 @@ def load_prompts(tokenizer: Tokenizer) -> list[Prompt]:
         encoded = tokenizer.apply_chat_template(
             messages, tokenize=True, add_generation_prompt=True, return_dict=True
         )
-        prompts.append(Prompt(domain, list(encoded["input_ids"])))
+        # `return_dict=True` gives the encoding, never the bare text or id list of the other forms
+        assert not isinstance(encoded, (str, list))
+        prompts.append(Prompt(domain, [int(token) for token in encoded["input_ids"]]))
     return prompts
