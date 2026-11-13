@@ -37,12 +37,15 @@ def test_a_recorded_batch_keeps_each_rows_own_tokens_and_ids(tmp_path):
 
 
 def test_a_recorded_batch_that_does_not_split_into_the_updates_is_refused(tmp_path):
+    """12 rows give shards of 3, which four updates cannot share: the rows left over would never train."""
     path, _, _ = _recorded(tmp_path, 12)
     with pytest.raises(ValueError, match="12 sequences"):
         train.load_recorded_batch(path)
 
 
 def test_a_batch_size_that_does_not_split_into_the_updates_is_refused():
+    """20 prompts give shards of 5: one row of each would be sampled and never trained. Refused before
+    any prompt is loaded."""
     config = train.Config(batch_size=20)
     with pytest.raises(ValueError, match="batch_size 20"):
         next(train.own_batches(config, student=None))  # type: ignore[arg-type]

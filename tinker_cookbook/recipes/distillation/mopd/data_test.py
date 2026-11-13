@@ -13,6 +13,7 @@ GOLD = torch.load(Path(__file__).parent / "testdata" / "reference_step.pt", weig
 
 
 def test_a_batch_of_128_at_two_two_one_is_51_51_26():
+    """The README's batch: the one prompt left after rounding down goes to IF, the largest fraction."""
     assert data.batch_quotas(128, data.DOMAIN_RATIO) == {"math": 51, "code": 51, "if": 26}
 
 
