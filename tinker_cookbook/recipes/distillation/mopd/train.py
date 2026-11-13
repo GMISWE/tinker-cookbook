@@ -19,8 +19,7 @@ import torch
 from tinker import types
 
 from tinker_cookbook import cli_utils
-from tinker_cookbook.recipes.distillation.mopd import prompts as prompt_set
-from tinker_cookbook.recipes.distillation.mopd import step
+from tinker_cookbook.recipes.distillation.mopd import prompts, step
 from tinker_cookbook.tokenizer_utils import get_tokenizer
 from tinker_cookbook.utils import ml_log
 from tinker_cookbook.utils.git_rev import recipe_user_metadata
@@ -103,16 +102,16 @@ class Batch:
     shards: list[list[int]]
 
 
-def require_whole_updates(sequences: int, what: str) -> None:
+def require_whole_updates(count: int, count_name: str) -> None:
     """Every shard must split into the step's updates, or the rows left over would never train."""
-    if sequences % (BALANCE_SHARDS * UPDATES_PER_STEP) != 0:
+    if count % (BALANCE_SHARDS * UPDATES_PER_STEP) != 0:
         raise ValueError(
-            f"{what} is {sequences}, not a multiple of {BALANCE_SHARDS * UPDATES_PER_STEP}"
+            f"{count_name} is {count}, not a multiple of {BALANCE_SHARDS * UPDATES_PER_STEP}"
         )
 
 
 def sample_rollouts(
-    student: tinker.TrainingClient, prompts: list[prompt_set.Prompt], max_tokens: int, name: str
+    student: tinker.TrainingClient, drawn: list[prompts.Prompt], max_tokens: int, name: str
 ) -> list[Rollout]:
     sampler = student.save_weights_and_get_sampling_client(name=name)
     # T=1, no nucleus or top-k cut, stop at the model's own end token
@@ -124,10 +123,10 @@ def sample_rollouts(
             sampling_params=params,
             topk_sample_logprobs=SAMPLER_CANDIDATES,
         )
-        for prompt in prompts
+        for prompt in drawn
     ]
     rollouts = []
-    for prompt, future in zip(prompts, futures, strict=True):
+    for prompt, future in zip(drawn, futures, strict=True):
         sequence = future.result().sequences[0]
         topk = sequence.topk_logprobs_np
         assert topk is not None, "the sampler returned no top-k ids"
@@ -139,19 +138,15 @@ def sample_rollouts(
 def own_batches(config: Config, student: tinker.TrainingClient) -> Iterator[Batch]:
     """A batch of fresh rollouts per step, the prompts drawn at the domain ratio."""
     require_whole_updates(config.batch_size, "batch_size")
-    prompts = prompt_set.within_limit(
-        prompt_set.load_prompts(get_tokenizer(STUDENT)), MAX_PROMPT_TOKENS
-    )
-    if config.n_steps > len(prompts) // config.batch_size:
-        raise ValueError(
-            f"n_steps {config.n_steps} is more than one pass over {len(prompts)} prompts"
-        )
-    draws = prompt_set.domain_batches(
-        [p.domain for p in prompts], config.batch_size, prompt_set.DOMAIN_RATIO, config.seed
+    pool = prompts.within_limit(prompts.load_prompts(get_tokenizer(STUDENT)), MAX_PROMPT_TOKENS)
+    if config.n_steps > len(pool) // config.batch_size:
+        raise ValueError(f"n_steps {config.n_steps} is more than one pass over {len(pool)} prompts")
+    draws = prompts.domain_batches(
+        [p.domain for p in pool], config.batch_size, prompts.DOMAIN_RATIO, config.seed
     )
     for index, rows in enumerate(draws):
         rollouts = sample_rollouts(
-            student, [prompts[row] for row in rows], config.max_tokens, name=f"step{index:04d}"
+            student, [pool[row] for row in rows], config.max_tokens, name=f"step{index:04d}"
         )
         lengths = [len(r.prompt) + len(r.response) for r in rollouts]
         yield Batch(rollouts, step.balanced_shards(lengths, BALANCE_SHARDS))
@@ -248,8 +243,9 @@ def train_step(
     ]
     reward_sum = [float(r.double().sum()) for r in per_position]
     abs_reward = [float(r.double().abs().sum()) for r in per_position]
-    weights = step.domain_weights(domains, response_tokens, abs_reward, TARGET_SHARE)
-    metrics.update(step.rollout_metrics(domains, response_tokens, reward_sum, abs_reward, weights))
+    statistics = step.domain_statistics(domains, response_tokens, abs_reward)
+    weights = step.domain_weights(statistics, TARGET_SHARE)
+    metrics.update(step.rollout_metrics(statistics, reward_sum, weights))
 
     def loss_of(rows: list[int]) -> LossFn:
         def loss_fn(

@@ -10,6 +10,7 @@ Tensors of one sequence have shape [r, K]: r response positions, K candidate ids
 
 import heapq
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import torch
 
@@ -41,63 +42,67 @@ def rows_by_domain(domains: Sequence[str]) -> dict[str, list[int]]:
     return {d: [row for row, name in enumerate(domains) if name == d] for d in sorted(set(domains))}
 
 
-def domain_tokens(domains: Sequence[str], response_tokens: Sequence[int]) -> dict[str, int]:
-    return {d: sum(response_tokens[i] for i in rows) for d, rows in rows_by_domain(domains).items()}
+@dataclass(frozen=True)
+class DomainStatistics:
+    """What a rollout batch holds of one domain."""
+
+    sequences: int
+    response_tokens: int
+    # the domain's part of the batch's response tokens
+    token_share: float
+    # the mean over the domain's response positions of |the reward summed over the K ids|
+    reward_abs_mean: float
 
 
-def reward_abs_mean(
+def domain_statistics(
     domains: Sequence[str], response_tokens: Sequence[int], abs_reward: Sequence[float]
-) -> dict[str, float]:
-    """Per domain, the mean over its response positions of |the reward summed over the K ids|."""
-    tokens = domain_tokens(domains, response_tokens)
-    return {
-        d: sum(abs_reward[i] for i in rows) / tokens[d]
-        for d, rows in rows_by_domain(domains).items()
-    }
+) -> dict[str, DomainStatistics]:
+    """`abs_reward[i]` is sequence i's sum over its response positions of |the reward summed over the K ids|."""
+    total = sum(response_tokens)
+    statistics = {}
+    for domain, rows in rows_by_domain(domains).items():
+        tokens = sum(response_tokens[i] for i in rows)
+        statistics[domain] = DomainStatistics(
+            len(rows), tokens, tokens / total, sum(abs_reward[i] for i in rows) / tokens
+        )
+    return statistics
 
 
 def domain_weights(
-    domains: Sequence[str],
-    response_tokens: Sequence[int],
-    abs_reward: Sequence[float],
-    target_share: dict[str, float],
+    statistics: dict[str, DomainStatistics], target_share: dict[str, float]
 ) -> dict[str, float]:
     """The loss weight of each domain's sequences (the reference's `compute_domain_loss_weights` with
     `normalize_reward_scale=1.0` and `reward_scale_direction="multiply"`).
 
-    `abs_reward[i]` is sequence i's sum over its response positions of |the reward summed over the K ids|.
     A domain's weight is its target share over its share of the batch's tokens, times how far its mean
     absolute reward lies from the batch's, and all weights are scaled to a token-weighted mean of 1.
     """
-    total = sum(response_tokens)
-    tokens = domain_tokens(domains, response_tokens)
-    magnitude = reward_abs_mean(domains, response_tokens, abs_reward)
-    scale = {d: target_share[d] / (tokens[d] / total) for d in tokens}
-    batch_magnitude = sum(scale[d] * magnitude[d] for d in scale) / sum(scale.values())
+    scale = {d: target_share[d] / s.token_share for d, s in statistics.items()}
+    batch_magnitude = sum(scale[d] * s.reward_abs_mean for d, s in statistics.items()) / sum(
+        scale.values()
+    )
     low, high = MAGNITUDE_FACTOR_RANGE
-    scale = {d: scale[d] * min(max(magnitude[d] / batch_magnitude, low), high) for d in scale}
-    weighted_tokens = sum(scale[name] * n for name, n in zip(domains, response_tokens, strict=True))
-    return {d: scale[d] * total / weighted_tokens for d in scale}
+    scale = {
+        d: scale[d] * min(max(s.reward_abs_mean / batch_magnitude, low), high)
+        for d, s in statistics.items()
+    }
+    weighted_share = sum(scale[d] * s.token_share for d, s in statistics.items())
+    return {d: scale[d] / weighted_share for d in scale}
 
 
 def rollout_metrics(
-    domains: Sequence[str],
-    response_tokens: Sequence[int],
-    reward_sum: Sequence[float],
-    abs_reward: Sequence[float],
-    weights: dict[str, float],
+    statistics: dict[str, DomainStatistics], reward_sum: Sequence[float], weights: dict[str, float]
 ) -> dict[str, float]:
     """The reference's metrics of a rollout batch, under its names. `reward_sum[i]` is sequence i's reward
-    summed over its positions and ids; `abs_reward` as in `domain_weights`."""
-    metrics = {"mt_opd/rm_scores_mean": sum(reward_sum) / sum(response_tokens)}
-    tokens = domain_tokens(domains, response_tokens)
-    magnitude = reward_abs_mean(domains, response_tokens, abs_reward)
-    for domain, rows in rows_by_domain(domains).items():
+    summed over its positions and ids."""
+    total = sum(s.response_tokens for s in statistics.values())
+    metrics = {"mt_opd/rm_scores_mean": sum(reward_sum) / total}
+    for domain, s in statistics.items():
         prefix = f"mt_opd/domain/{domain}"
-        metrics[f"{prefix}/prompt_count"] = float(len(rows))
-        metrics[f"{prefix}/token_share"] = tokens[domain] / sum(response_tokens)
-        metrics[f"{prefix}/mean_response_length"] = tokens[domain] / len(rows)
-        metrics[f"{prefix}/reward_abs_mean"] = magnitude[domain]
+        metrics[f"{prefix}/prompt_count"] = float(s.sequences)
+        metrics[f"{prefix}/token_share"] = s.token_share
+        metrics[f"{prefix}/mean_response_length"] = s.response_tokens / s.sequences
+        metrics[f"{prefix}/reward_abs_mean"] = s.reward_abs_mean
         metrics[f"{prefix}/loss_weight"] = weights[domain]
     return metrics
 
