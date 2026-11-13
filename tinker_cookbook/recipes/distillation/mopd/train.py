@@ -1,8 +1,9 @@
 """Multi-teacher on-policy distillation with a top-K reward (M-OPD), as Open-MOPD runs it.
 
-A full-weight student samples a response to each prompt of a mixed batch. At every sampled position the
-student's 16 most likely ids are scored by the teacher of the prompt's domain, and the reward of an id is
-the student's probability times the teacher's logprob minus the student's. Four clipped policy-gradient
+A full-weight student samples a response to each prompt of a mixed batch. At every sampled position 16
+candidate ids, the trainer's best of the sampler's 20, are scored by the teacher of the prompt's domain.
+The reward of an id is the student's probability, renormalised over the 16, times the teacher's logprob
+minus the student's. Four clipped policy-gradient
 updates follow, each on a quarter of the batch. See the README beside this file.
 
     python -m tinker_cookbook.recipes.distillation.mopd.train n_steps=60
@@ -227,9 +228,10 @@ def train_step(
 
     with timed("teacher_forwards", metrics):
         by_row: dict[int, torch.Tensor] = {}
-        # One teacher at a time. Observed on one service that holds the four models on shared GPUs: the
-        # three forwards submitted together failed, one after another they pass. The cause is not
-        # established.
+        # One teacher at a time: a workaround with thin evidence. On a service that holds the four
+        # models on shared GPUs, a step whose three teacher forwards were submitted together failed
+        # in 1 run of 1 (one forward returned an error); with one forward at a time 6 runs of 6
+        # completed. The cause is not established.
         for domain, rows in step.rows_by_domain(domains).items():
             scored = response_logprobs(
                 teachers[domain], [rollouts[i] for i in rows], [ids[i] for i in rows]
