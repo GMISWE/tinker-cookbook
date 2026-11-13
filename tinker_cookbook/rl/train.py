@@ -2128,7 +2128,9 @@ async def do_train_step_streaming_and_get_sampling_client(
             optim_result = await optim_future
         if not substep_logprobs_D and optim_result.loss_fn_outputs:
             # deferred loss outputs: the optimizer step carries the whole substep's
-            substep_logprobs_D = [output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs]
+            substep_logprobs_D = [
+                output["logprobs"].to_torch() for output in optim_result.loss_fn_outputs
+            ]
         all_training_logprobs_D.extend(substep_logprobs_D)
 
         if optim_result.metrics:

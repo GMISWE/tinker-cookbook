@@ -10,6 +10,7 @@ checkpoint files. The server must be able to read the directory.
     python -m tinker_cookbook.recipes.bio_classification.prepare_model \
         base=facebook/esm2_t33_650M_UR50D head=token labels=C,E,H out=/data/models/esm2-650m-q3
 """
+
 import json
 import os
 from pathlib import Path
@@ -53,7 +54,9 @@ def prepare_hf_model(base: str, head: str, labels: list[str], out: Path) -> Path
     return out
 
 
-def prepare_checkpoint_dir(checkpoint_dir: Path, model_type: str, head: str, labels: list[str]) -> Path:
+def prepare_checkpoint_dir(
+    checkpoint_dir: Path, model_type: str, head: str, labels: list[str]
+) -> Path:
     """Declare the head beside a non-HF checkpoint (Evo2 under Megatron-Bridge)."""
     cfg = head_config({"model_type": model_type}, head, labels)
     with (checkpoint_dir / "config.json").open("w") as f:
@@ -64,15 +67,21 @@ def prepare_checkpoint_dir(checkpoint_dir: Path, model_type: str, head: str, lab
 @chz.chz
 class Config:
     base: str
-    head: str = "token"            # token | sequence
-    labels: str = "C,E,H"          # comma-separated class names, in id order
-    out: str = ""                  # model directory to create; default under the cookbook cache
-    checkpoint_dir: str = ""       # non-HF checkpoint (Evo2): declare the head in place
+    head: str = "token"  # token | sequence
+    labels: str = "C,E,H"  # comma-separated class names, in id order
+    out: str = ""  # model directory to create; default under the cookbook cache
+    checkpoint_dir: str = ""  # non-HF checkpoint (Evo2): declare the head in place
     model_type: str = "evo2"
 
 
 def default_out(base: str, head: str, n: int) -> Path:
-    return Path.home() / ".cache" / "tinker-cookbook" / "bio_models" / f"{base.replace('/', '--')}-{head}{n}"
+    return (
+        Path.home()
+        / ".cache"
+        / "tinker-cookbook"
+        / "bio_models"
+        / f"{base.replace('/', '--')}-{head}{n}"
+    )
 
 
 def main(cfg: Config) -> None:
@@ -80,7 +89,12 @@ def main(cfg: Config) -> None:
     if cfg.checkpoint_dir:
         out = prepare_checkpoint_dir(Path(cfg.checkpoint_dir), cfg.model_type, cfg.head, labels)
     else:
-        out = prepare_hf_model(cfg.base, cfg.head, labels, Path(cfg.out) if cfg.out else default_out(cfg.base, cfg.head, len(labels)))
+        out = prepare_hf_model(
+            cfg.base,
+            cfg.head,
+            labels,
+            Path(cfg.out) if cfg.out else default_out(cfg.base, cfg.head, len(labels)),
+        )
     print(out)
 
 

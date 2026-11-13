@@ -27,8 +27,10 @@ def load(
     tok = AutoTokenizer.from_pretrained(tokenizer_path)
     ds = datasets.load_dataset(
         _REPO,
-        data_files={"train": "splice_sites_all/train.parquet",
-                    "test": "splice_sites_all/test.parquet"},
+        data_files={
+            "train": "splice_sites_all/train.parquet",
+            "test": "splice_sites_all/test.parquet",
+        },
     )
 
     def build(split) -> list[types.Datum]:
@@ -38,12 +40,17 @@ def load(
             seqs, labs = seqs[:subset], labs[:subset]
         out = []
         for s, y in zip(seqs, labs):
-            ids = tok(s.upper(), add_special_tokens=True, truncation=True,
-                      max_length=max_len)["input_ids"]
-            out.append(types.Datum(
-                model_input=types.ModelInput.from_ints(ids),
-                loss_fn_inputs={"labels": types.TensorData.from_numpy(np.asarray([int(y)], dtype=np.int64))},
-            ))
+            ids = tok(s.upper(), add_special_tokens=True, truncation=True, max_length=max_len)[
+                "input_ids"
+            ]
+            out.append(
+                types.Datum(
+                    model_input=types.ModelInput.from_ints(ids),
+                    loss_fn_inputs={
+                        "labels": types.TensorData.from_numpy(np.asarray([int(y)], dtype=np.int64))
+                    },
+                )
+            )
         return out
 
     return build("train"), build("test")

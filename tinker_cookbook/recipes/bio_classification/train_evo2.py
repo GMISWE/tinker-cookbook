@@ -15,6 +15,7 @@ Requires a server running the megatron_bridge backend.
 Pin the known-good server config (28500 train, 1000 iters, lr 5e-4, r16, mean-pool);
 expected ~0.86 test accuracy (unverified here; blog LoRA+head 0.966).
 """
+
 import random
 
 import chz
@@ -26,7 +27,7 @@ from tinker_cookbook.recipes.bio_classification import data_evo2 as sd
 
 @chz.chz
 class Config:
-    model_dir: str          # MBridge checkpoint + head-declaring config.json
+    model_dir: str  # MBridge checkpoint + head-declaring config.json
     tokenizer_path: str
     lora_rank: int = 16
     learning_rate: float = 5e-4
@@ -34,18 +35,18 @@ class Config:
     batch_size: int = 8
     eval_batch_size: int = 16
     seq_length: int = 1024
-    subset: int = 6000                                # 0 = full 30K
-    eval_subset: int = 0                              # 0 = full 3K test
+    subset: int = 6000  # 0 = full 30K
+    eval_subset: int = 0  # 0 = full 3K test
     base_url: str | None = None
 
 
 def evaluate(tc, data: list[types.Datum], bs: int) -> float:
     correct = total = 0
     for i in range(0, len(data), bs):
-        batch = data[i:i + bs]
+        batch = data[i : i + bs]
         result = tc.forward(batch, "cross_entropy").result()
         for d, out in zip(batch, result.loss_fn_outputs):
-            logits = out["logits"].to_numpy()              # [C]
+            logits = out["logits"].to_numpy()  # [C]
             label = int(d.loss_fn_inputs["labels"].to_numpy().reshape(-1)[0])
             total += 1
             correct += int(int(logits.argmax(-1)) == label)
@@ -55,8 +56,9 @@ def evaluate(tc, data: list[types.Datum], bs: int) -> float:
 
 
 def main(cfg: Config):
-    service = (tinker.ServiceClient(base_url=cfg.base_url)
-               if cfg.base_url else tinker.ServiceClient())
+    service = (
+        tinker.ServiceClient(base_url=cfg.base_url) if cfg.base_url else tinker.ServiceClient()
+    )
     tc = service.create_lora_training_client(base_model=cfg.model_dir, rank=cfg.lora_rank)
     train_data, test_data = sd.load(cfg.tokenizer_path, cfg.seq_length, cfg.subset)
     print(f"model={cfg.model_dir} train={len(train_data)} test={len(test_data)}")
@@ -68,7 +70,7 @@ def main(cfg: Config):
     for ep in range(cfg.num_epochs):
         random.Random(ep).shuffle(train_data)
         for i in range(0, len(train_data), cfg.batch_size):
-            batch = train_data[i:i + cfg.batch_size]
+            batch = train_data[i : i + cfg.batch_size]
             fb = tc.forward_backward(batch, "cross_entropy")
             opt = tc.optim_step(types.AdamParams(learning_rate=cfg.learning_rate))
             fb.result()
