@@ -120,12 +120,6 @@ def get_qwen_info() -> dict[str, ModelAttributes]:
         ),
         # Qwen2.5-Instruct maps to the Qwen3 renderer (unverified that the two chat templates render alike)
         "Qwen2.5-0.5B-Instruct": ModelAttributes(org, "2.5", "0.5B", True, _QWEN3),
-        "Qwen2.5-1.5B-Instruct": ModelAttributes(org, "2.5", "1.5B", True, _QWEN3),
-        "Qwen2.5-3B-Instruct": ModelAttributes(org, "2.5", "3B", True, _QWEN3),
-        "Qwen2.5-7B-Instruct": ModelAttributes(org, "2.5", "7B", True, _QWEN3),
-        "Qwen2.5-14B-Instruct": ModelAttributes(org, "2.5", "14B", True, _QWEN3),
-        "Qwen2.5-32B-Instruct": ModelAttributes(org, "2.5", "32B", True, _QWEN3),
-        "Qwen2.5-72B-Instruct": ModelAttributes(org, "2.5", "72B", True, _QWEN3),
         "Qwen3-8B-Base": ModelAttributes(org, "3", "8B", False, _ROLE_COLON),
         "Qwen3-30B-A3B-Base": ModelAttributes(org, "3", "30B-A3B", False, _ROLE_COLON),
         "Qwen3-8B": ModelAttributes(org, "3", "8B", True, _QWEN3),
