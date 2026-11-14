@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from tinker import types
 
 from tinker_cookbook.recipes.distillation.mopd import train
 
@@ -65,3 +66,58 @@ def test_a_datum_carries_the_ids_at_the_positions_that_predict_the_response():
     assert torch.equal(targets[2:], ids) and int(targets[:2].abs().sum()) == 0
     assert torch.equal(rollout.response_rows(targets), ids.float())
     assert "weights" not in train.scoring_datum(rollout, ids, with_weights=False).loss_fn_inputs
+
+
+class _Future:
+    def __init__(self, events: list, name: str, output: types.ForwardBackwardOutput):
+        self.events, self.name, self.output = events, name, output
+
+    def result(self) -> types.ForwardBackwardOutput:
+        self.events.append(("awaited", self.name))
+        return self.output
+
+
+class _Teacher:
+    """Scores every position of every datum with its own value."""
+
+    def __init__(self, events: list, name: str, value: float):
+        self.events, self.name, self.value = events, name, value
+
+    def forward(self, data: list[types.Datum], loss_fn: str) -> _Future:
+        self.events.append(("submitted", self.name))
+        outputs = [
+            {
+                "logprobs": types.TensorData.from_torch(
+                    torch.full((d.model_input.length, 16), self.value)
+                )
+            }
+            for d in data
+        ]
+        return _Future(
+            self.events,
+            self.name,
+            types.ForwardBackwardOutput(
+                loss_fn_output_type="x", loss_fn_outputs=outputs, metrics={}
+            ),
+        )
+
+
+def test_every_teachers_forward_is_submitted_before_the_first_is_awaited():
+    """The teachers were scored one at a time, each forward awaited before the next was submitted, so a
+    service could never run two of them together. Each row still gets its own domain's teacher."""
+    events: list = []
+    teachers = {"code": _Teacher(events, "code", 1.0), "math": _Teacher(events, "math", 2.0)}
+    rollouts = [
+        train.Rollout(domain, [5, 6, 7], [8, 9], candidates=torch.zeros(2, 16, dtype=torch.long))
+        for domain in ("math", "code", "math")
+    ]
+    ids = [torch.zeros(2, 16, dtype=torch.long) for _ in rollouts]
+    scored = train.score_with_teachers(teachers, rollouts, ids)  # type: ignore[arg-type]
+    assert events == [
+        ("submitted", "code"),
+        ("submitted", "math"),
+        ("awaited", "code"),
+        ("awaited", "math"),
+    ]
+    assert [float(rows.unique()) for rows in scored] == [2.0, 1.0, 2.0]
+    assert [rows.shape for rows in scored] == [(2, 16)] * 3
