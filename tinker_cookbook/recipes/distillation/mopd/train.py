@@ -191,19 +191,43 @@ def scoring_datum(rollout: Rollout, ids: torch.Tensor, with_weights: bool) -> ty
     return types.Datum(model_input=types.ModelInput.from_ints(tokens[:-1]), loss_fn_inputs=inputs)
 
 
-def response_logprobs(
+def submit_forward(
     client: tinker.TrainingClient, rollouts: list[Rollout], ids: list[torch.Tensor]
-) -> list[torch.Tensor]:
-    """The client's logprobs of `ids` at every response position of each rollout, [r, K]."""
+) -> Callable[[], list[torch.Tensor]]:
+    """Submits a forward that scores `ids` at every response position of each rollout. The returned
+    call waits for it and gives the client's logprobs of each rollout's `ids`, [r, K]."""
     datums = [
         scoring_datum(rollout, row_ids, with_weights=True)
         for rollout, row_ids in zip(rollouts, ids, strict=True)
     ]
-    outputs = client.forward(datums, "cross_entropy").result().loss_fn_outputs
-    return [
-        rollout.response_rows(output["logprobs"].to_torch())
-        for rollout, output in zip(rollouts, outputs, strict=True)
-    ]
+    future = client.forward(datums, "cross_entropy")
+
+    def logprobs() -> list[torch.Tensor]:
+        outputs = future.result().loss_fn_outputs
+        return [
+            rollout.response_rows(output["logprobs"].to_torch())
+            for rollout, output in zip(rollouts, outputs, strict=True)
+        ]
+
+    return logprobs
+
+
+def score_with_teachers(
+    teachers: dict[str, tinker.TrainingClient], rollouts: list[Rollout], ids: list[torch.Tensor]
+) -> list[torch.Tensor]:
+    """Each rollout's `ids` scored by the teacher of its domain, [r, K]. Every teacher's forward is
+    submitted before the first is awaited."""
+    rows_of = step.rows_by_domain([rollout.domain for rollout in rollouts])
+    pending = {
+        domain: submit_forward(
+            teachers[domain], [rollouts[i] for i in rows], [ids[i] for i in rows]
+        )
+        for domain, rows in rows_of.items()
+    }
+    by_row: dict[int, torch.Tensor] = {}
+    for domain, rows in rows_of.items():
+        by_row.update(zip(rows, pending[domain](), strict=True))
+    return [by_row[i] for i in range(len(rollouts))]
 
 
 def train_step(
@@ -218,7 +242,7 @@ def train_step(
     response_tokens = [len(rollout.response) for rollout in rollouts]
 
     with timed("student_forward", metrics):
-        candidate_logprobs = response_logprobs(student, rollouts, [r.candidates for r in rollouts])
+        candidate_logprobs = submit_forward(student, rollouts, [r.candidates for r in rollouts])()
     kept = [
         step.best_candidates(rollout.candidates, logprobs, TOP_K)
         for rollout, logprobs in zip(rollouts, candidate_logprobs, strict=True)
@@ -227,17 +251,7 @@ def train_step(
     student_logprobs = [kept_logprobs for _, kept_logprobs in kept]
 
     with timed("teacher_forwards", metrics):
-        by_row: dict[int, torch.Tensor] = {}
-        # One teacher at a time: a workaround with thin evidence. On a service that holds the four
-        # models on shared GPUs, a step whose three teacher forwards were submitted together failed
-        # in 1 run of 1 (one forward returned an error); with one forward at a time 6 runs of 6
-        # completed. The cause is not established.
-        for domain, rows in step.rows_by_domain(domains).items():
-            scored = response_logprobs(
-                teachers[domain], [rollouts[i] for i in rows], [ids[i] for i in rows]
-            )
-            by_row.update(zip(rows, scored, strict=True))
-        teacher_logprobs = [by_row[i] for i in range(len(rollouts))]
+        teacher_logprobs = score_with_teachers(teachers, rollouts, ids)
 
     per_position = [
         step.topk_reward(s, t).sum(dim=-1)
