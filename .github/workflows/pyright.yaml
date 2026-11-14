@@ -23,5 +23,10 @@ jobs:
       - name: venv
         run: uv venv && uv sync --all-extras
 
+      # This fork's recipes read fields that only the fork's SDK declares (an optimizer step's
+      # loss_fn_outputs), so the types come from that SDK, at a pinned commit.
+      - name: fork-sdk
+        run: uv pip install "tinker @ git+https://github.com/GMISWE/tinker_gmi@e8f89066512c087cb798940a7d29d45fd3ab5df6"
+
       - name: pyright
-        run: uv run pyright tinker_cookbook
+        run: uv run --no-sync pyright tinker_cookbook
