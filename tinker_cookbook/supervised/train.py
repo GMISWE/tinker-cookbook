@@ -519,9 +519,15 @@ async def main(config: Config):
                 metrics.update({f"backend/{k}": v for k, v in optim_step_result.metrics.items()})
 
             # A backend that defers the loss to the optimizer step returns placeholders from
-            # forward_backward and the real per-token logprobs with the step
-            outputs = optim_step_result.loss_fn_outputs or fwd_bwd_result.loss_fn_outputs
-            logprobs = [x["logprobs"] for x in outputs]
+            # forward_backward and the real per-token logprobs with the step (in the response's
+            # own tensor type, rebuilt here as the public one the metric helpers take)
+            if optim_step_result.loss_fn_outputs:
+                logprobs = [
+                    tinker.TensorData.from_torch(x["logprobs"].to_torch())
+                    for x in optim_step_result.loss_fn_outputs
+                ]
+            else:
+                logprobs = [x["logprobs"] for x in fwd_bwd_result.loss_fn_outputs]
             weights = [datum.loss_fn_inputs["weights"] for datum in submitted.data]
             train_nll = compute_mean_nll(logprobs, weights)
 
