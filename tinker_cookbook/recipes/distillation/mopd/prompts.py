@@ -77,6 +77,9 @@ def domain_batches(
             and quotas["math"] == quotas["code"] + 1
         ):
             quotas["math"], quotas["code"] = quotas["code"], quotas["math"]
+        empty = [d for d in DOMAINS if quotas[d] > 0 and not pools[d]]
+        if empty:
+            raise ValueError(f"No prompts for domains with positive quotas: {', '.join(empty)}")
         batch = [row for d in DOMAINS for row in take(d, quotas[d])]
         rng.shuffle(batch)
         yield batch
