@@ -521,10 +521,11 @@ async def main(config: Config):
             # A backend that defers the loss to the optimizer step returns placeholders from
             # forward_backward and the real per-token logprobs with the step (in the response's
             # own tensor type, rebuilt here as the public one the metric helpers take)
-            if optim_step_result.loss_fn_outputs:
+            # getattr: the published SDK's OptimStepResponse has no loss_fn_outputs field
+            deferred_outputs = getattr(optim_step_result, "loss_fn_outputs", None)
+            if deferred_outputs:
                 logprobs = [
-                    tinker.TensorData.from_torch(x["logprobs"].to_torch())
-                    for x in optim_step_result.loss_fn_outputs
+                    tinker.TensorData.from_torch(x["logprobs"].to_torch()) for x in deferred_outputs
                 ]
             else:
                 logprobs = [x["logprobs"] for x in fwd_bwd_result.loss_fn_outputs]
