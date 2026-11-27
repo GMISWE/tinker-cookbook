@@ -39,6 +39,33 @@ def test_the_domain_weights_of_the_recorded_batch_are_the_recorded_weights():
         assert _relative(weights[domain], recorded) < 1e-5
 
 
+@pytest.mark.parametrize("refresh", [False, True])
+def test_identical_logprobs_give_finite_weights_and_a_zero_update(refresh: bool):
+    """A zero teacher/student gap has no learning signal, but still has reference loss weights."""
+    domains = ["math", "math", "code", "if"]
+    old = [torch.full((n, 16), -3.0) for n in (1, 3, 2, 2)]
+    rewards = [step.topk_reward(logprobs, logprobs) for logprobs in old]
+    statistics = step.domain_statistics(
+        domains,
+        [len(logprobs) for logprobs in old],
+        [float(reward.sum(dim=-1).abs().sum()) for reward in rewards],
+    )
+    weights = step.domain_weights(statistics, {"math": 0.4, "code": 0.4, "if": 0.2})
+    assert weights == pytest.approx({"math": 0.8, "code": 1.6, "if": 0.8})
+    assert sum(weights[d] * s.token_share for d, s in statistics.items()) == pytest.approx(1.0)
+    current = [logprobs.clone().requires_grad_() for logprobs in old]
+    loss, per_sequence, drift = step.update_loss(
+        current, old, old, [weights[d] for d in domains], refresh
+    )
+    loss.backward()
+    assert loss.item() == 0.0
+    assert torch.equal(per_sequence, torch.zeros(4))
+    assert torch.equal(drift, torch.zeros(4))
+    for logprobs in current:
+        assert logprobs.grad is not None
+        assert torch.equal(logprobs.grad, torch.zeros_like(logprobs))
+
+
 def test_the_rollout_metrics_of_the_recorded_batch_are_the_reference_values():
     """The reward metrics are per response token, the per-domain ones over that domain's tokens only."""
     weights = step.domain_weights(_statistics(), SEQUENCES["target_share"])

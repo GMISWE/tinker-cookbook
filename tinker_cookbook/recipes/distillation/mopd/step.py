@@ -83,7 +83,8 @@ def domain_weights(
     )
     low, high = MAGNITUDE_FACTOR_RANGE
     scale = {
-        d: scale[d] * min(max(s.reward_abs_mean / batch_magnitude, low), high)
+        d: scale[d]
+        * min(max(max(s.reward_abs_mean, 1e-12) / max(batch_magnitude, 1e-12), low), high)
         for d, s in statistics.items()
     }
     weighted_share = sum(scale[d] * s.token_share for d, s in statistics.items())
